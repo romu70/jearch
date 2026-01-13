@@ -1,0 +1,1126 @@
+openapi: 3.0.3
+info:
+  title: Jearch API - Virtual Career Coach
+  description: |
+    RESTful API for managing career paths with STAR-formatted experiences.
+    Supports authentication, professional/extra-professional experiences, education tracking, and markdown export.
+  version: 1.0.0
+  contact:
+    name: Jearch Development Team
+servers:
+  - url: https://jearch.vercel.app/api
+    description: Production server
+  - url: http://localhost:3000/api
+    description: Local development server
+
+tags:
+  - name: Auth
+    description: Authentication and user management
+  - name: Professional Experiences
+    description: CRUD operations for professional work experiences
+  - name: Extra-Professional Experiences
+    description: CRUD operations for volunteer work and personal projects
+  - name: Education
+    description: CRUD operations for educational history
+  - name: Export
+    description: Career path export functionality
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ============================================================================
+  # AUTHENTICATION
+  # ============================================================================
+
+  /auth/signup:
+    post:
+      tags: [Auth]
+      summary: Register new user account
+      description: Creates a new user account with email verification (FR-001, FR-002, FR-003)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  description: User email address
+                password:
+                  type: string
+                  format: password
+                  minLength: 12
+                  description: Password (min 12 chars, must contain letters and numbers)
+                  pattern: '^(?=.*[A-Za-z])(?=.*\d).{12,}$'
+              example:
+                email: user@example.com
+                password: SecurePass123
+      responses:
+        '201':
+          description: User created, verification email sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id:
+                    type: string
+                    format: uuid
+                  email:
+                    type: string
+                  message:
+                    type: string
+                    example: "Verification email sent. Please check your inbox."
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Authenticate user
+      description: Logs in user with email and password (FR-004)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+              example:
+                email: user@example.com
+                password: SecurePass123
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                    description: JWT access token (1 hour expiry)
+                  refresh_token:
+                    type: string
+                    description: Refresh token (7 days expiry)
+                  user:
+                    $ref: '#/components/schemas/UserProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Email not verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: End user session
+      description: Logs out user and invalidates tokens (FR-007)
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Logged out successfully"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Request password reset
+      description: Sends password reset email (FR-008)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+              example:
+                email: user@example.com
+      responses:
+        '200':
+          description: Password reset email sent (or queued if SMTP fails)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Password reset instructions sent to your email"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  # ============================================================================
+  # PROFESSIONAL EXPERIENCES
+  # ============================================================================
+
+  /experiences/professional:
+    get:
+      tags: [Professional Experiences]
+      summary: List all professional experiences
+      description: Returns user's professional experiences in reverse chronological order (FR-026, FR-027)
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 100
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: List of professional experiences
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  experiences:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ProfessionalExperience'
+                  total:
+                    type: integer
+                    description: Total count of experiences
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Professional Experiences]
+      summary: Create professional experience
+      description: Creates a new professional experience with STAR components (FR-018, FR-019)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfessionalExperienceCreate'
+      responses:
+        '201':
+          description: Experience created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfessionalExperience'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /experiences/professional/{id}:
+    get:
+      tags: [Professional Experiences]
+      summary: Get professional experience by ID
+      description: Returns a single professional experience
+      parameters:
+        - $ref: '#/components/parameters/ExperienceId'
+      responses:
+        '200':
+          description: Experience details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfessionalExperience'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [Professional Experiences]
+      summary: Update professional experience
+      description: Updates an existing professional experience with conflict detection (FR-024, FR-053)
+      parameters:
+        - $ref: '#/components/parameters/ExperienceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfessionalExperienceUpdate'
+      responses:
+        '200':
+          description: Experience updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfessionalExperience'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Version conflict detected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Conflict: Experience was modified by another session"
+                  current_version:
+                    type: integer
+                    description: Current version in database
+                  your_version:
+                    type: integer
+                    description: Version sent in request
+                  current_data:
+                    $ref: '#/components/schemas/ProfessionalExperience'
+                    description: Current data for merge interface
+
+    delete:
+      tags: [Professional Experiences]
+      summary: Delete professional experience
+      description: Permanently deletes a professional experience (FR-025)
+      parameters:
+        - $ref: '#/components/parameters/ExperienceId'
+      responses:
+        '204':
+          description: Experience deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ============================================================================
+  # EXTRA-PROFESSIONAL EXPERIENCES
+  # ============================================================================
+
+  /experiences/extra-professional:
+    get:
+      tags: [Extra-Professional Experiences]
+      summary: List all extra-professional experiences
+      description: Returns user's extra-professional experiences in reverse chronological order (FR-036)
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of extra-professional experiences
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  experiences:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ExtraProfessionalExperience'
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Extra-Professional Experiences]
+      summary: Create extra-professional experience
+      description: Creates a new extra-professional experience with STAR components (FR-029, FR-030)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtraProfessionalExperienceCreate'
+      responses:
+        '201':
+          description: Experience created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtraProfessionalExperience'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /experiences/extra-professional/{id}:
+    get:
+      tags: [Extra-Professional Experiences]
+      summary: Get extra-professional experience by ID
+      parameters:
+        - $ref: '#/components/parameters/ExperienceId'
+      responses:
+        '200':
+          description: Experience details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtraProfessionalExperience'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [Extra-Professional Experiences]
+      summary: Update extra-professional experience
+      description: Updates an existing extra-professional experience with conflict detection (FR-035, FR-053)
+      parameters:
+        - $ref: '#/components/parameters/ExperienceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtraProfessionalExperienceUpdate'
+      responses:
+        '200':
+          description: Experience updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtraProfessionalExperience'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Version conflict detected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  current_version:
+                    type: integer
+                  your_version:
+                    type: integer
+                  current_data:
+                    $ref: '#/components/schemas/ExtraProfessionalExperience'
+
+    delete:
+      tags: [Extra-Professional Experiences]
+      summary: Delete extra-professional experience
+      description: Permanently deletes an extra-professional experience (FR-035)
+      parameters:
+        - $ref: '#/components/parameters/ExperienceId'
+      responses:
+        '204':
+          description: Experience deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ============================================================================
+  # EDUCATION
+  # ============================================================================
+
+  /education:
+    get:
+      tags: [Education]
+      summary: List all education entries
+      description: Returns user's education in reverse chronological order (FR-041)
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: List of education entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  education:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Education'
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Education]
+      summary: Create education entry
+      description: Creates a new education entry (FR-037, FR-039)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EducationCreate'
+      responses:
+        '201':
+          description: Education entry created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Education'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /education/{id}:
+    get:
+      tags: [Education]
+      summary: Get education entry by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Education details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Education'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [Education]
+      summary: Update education entry
+      description: Updates an existing education entry with conflict detection (FR-040, FR-053)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EducationUpdate'
+      responses:
+        '200':
+          description: Education entry updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Education'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Version conflict detected
+
+    delete:
+      tags: [Education]
+      summary: Delete education entry
+      description: Permanently deletes an education entry (FR-040)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Education entry deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ============================================================================
+  # EXPORT
+  # ============================================================================
+
+  /export/markdown:
+    get:
+      tags: [Export]
+      summary: Export career path to Markdown
+      description: |
+        Generates a formatted markdown document containing all professional experiences,
+        extra-professional experiences, and education (FR-042, FR-043, FR-044, FR-045, FR-046, FR-047, FR-048a)
+      responses:
+        '200':
+          description: Markdown export generated successfully
+          content:
+            text/markdown:
+              schema:
+                type: string
+                example: |
+                  # Career Path: John Doe
+
+                  Generated on: 2026-01-13
+
+                  ## Professional Experiences
+
+                  ### Senior Software Engineer at Tech Corp
+                  **Duration**: Jan 2020 - Present
+
+                  **Situation**: The company needed to modernize their legacy monolith...
+
+                  **Task**: Lead the migration to microservices architecture...
+
+                  **Action**: Designed and implemented a phased migration strategy...
+
+                  **Result**: Successfully migrated 80% of services with zero downtime...
+
+                  ---
+
+                  ## Extra-Professional Experiences
+
+                  ### Open Source Contributor - Apache Foundation
+                  **Duration**: Mar 2019 - Ongoing
+
+                  **Situation**: Apache project lacked TypeScript support...
+
+                  ---
+
+                  ## Education
+
+                  ### Bachelor of Science in Computer Science
+                  **Institution**: University of Technology
+                  **Duration**: Sep 2015 - Jun 2019
+                  **GPA**: 3.8 / 4.0
+                  **Honors**: Summa Cum Laude
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+# ==============================================================================
+# COMPONENTS
+# ==============================================================================
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Supabase JWT access token
+
+  parameters:
+    ExperienceId:
+      name: id
+      in: path
+      required: true
+      description: Experience unique identifier
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    # ==========================================================================
+    # USER SCHEMAS
+    # ==========================================================================
+
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+          nullable: true
+        email_confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    # ==========================================================================
+    # PROFESSIONAL EXPERIENCE SCHEMAS
+    # ==========================================================================
+
+    STARComponents:
+      type: object
+      description: STAR format components (Situation, Task, Action, Result)
+      properties:
+        situation:
+          type: string
+          maxLength: 10000
+          nullable: true
+          description: Situation component of STAR format
+        task:
+          type: string
+          maxLength: 10000
+          nullable: true
+          description: Task component of STAR format
+        action:
+          type: string
+          maxLength: 10000
+          nullable: true
+          description: Action component of STAR format
+        result:
+          type: string
+          maxLength: 10000
+          nullable: true
+          description: Result component of STAR format
+
+    ProfessionalExperience:
+      allOf:
+        - type: object
+          required: [id, user_id, company_name, role_title, start_date, is_current, version, created_at, updated_at, completion_percentage]
+          properties:
+            id:
+              type: string
+              format: uuid
+            user_id:
+              type: string
+              format: uuid
+            company_name:
+              type: string
+              example: "Tech Corp Inc."
+            role_title:
+              type: string
+              example: "Senior Software Engineer"
+            start_date:
+              type: string
+              format: date
+              example: "2020-01-15"
+            end_date:
+              type: string
+              format: date
+              nullable: true
+              example: "2023-06-30"
+            is_current:
+              type: boolean
+              example: false
+              description: Whether this is the current position
+            version:
+              type: integer
+              example: 3
+              description: Version number for conflict detection
+            completion_percentage:
+              type: integer
+              minimum: 0
+              maximum: 100
+              example: 75
+              description: Percentage of STAR components filled (0, 25, 50, 75, 100)
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+        - $ref: '#/components/schemas/STARComponents'
+
+    ProfessionalExperienceCreate:
+      allOf:
+        - type: object
+          required: [company_name, role_title, start_date]
+          properties:
+            company_name:
+              type: string
+              minLength: 1
+              maxLength: 500
+            role_title:
+              type: string
+              minLength: 1
+              maxLength: 500
+            start_date:
+              type: string
+              format: date
+            end_date:
+              type: string
+              format: date
+              nullable: true
+            is_current:
+              type: boolean
+              default: false
+        - $ref: '#/components/schemas/STARComponents'
+
+    ProfessionalExperienceUpdate:
+      allOf:
+        - type: object
+          required: [version]
+          properties:
+            company_name:
+              type: string
+              minLength: 1
+              maxLength: 500
+            role_title:
+              type: string
+              minLength: 1
+              maxLength: 500
+            start_date:
+              type: string
+              format: date
+            end_date:
+              type: string
+              format: date
+              nullable: true
+            is_current:
+              type: boolean
+            version:
+              type: integer
+              description: Current version (for conflict detection)
+        - $ref: '#/components/schemas/STARComponents'
+
+    # ==========================================================================
+    # EXTRA-PROFESSIONAL EXPERIENCE SCHEMAS
+    # ==========================================================================
+
+    ExtraProfessionalExperience:
+      allOf:
+        - type: object
+          required: [id, user_id, activity_name, start_date, is_ongoing, version, created_at, updated_at, completion_percentage]
+          properties:
+            id:
+              type: string
+              format: uuid
+            user_id:
+              type: string
+              format: uuid
+            activity_name:
+              type: string
+              example: "Open Source Contributor"
+            organization:
+              type: string
+              nullable: true
+              example: "Apache Foundation"
+            start_date:
+              type: string
+              format: date
+            end_date:
+              type: string
+              format: date
+              nullable: true
+            is_ongoing:
+              type: boolean
+              example: true
+            version:
+              type: integer
+            completion_percentage:
+              type: integer
+              minimum: 0
+              maximum: 100
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+        - $ref: '#/components/schemas/STARComponents'
+
+    ExtraProfessionalExperienceCreate:
+      allOf:
+        - type: object
+          required: [activity_name, start_date]
+          properties:
+            activity_name:
+              type: string
+              minLength: 1
+              maxLength: 500
+            organization:
+              type: string
+              maxLength: 500
+              nullable: true
+            start_date:
+              type: string
+              format: date
+            end_date:
+              type: string
+              format: date
+              nullable: true
+            is_ongoing:
+              type: boolean
+              default: false
+        - $ref: '#/components/schemas/STARComponents'
+
+    ExtraProfessionalExperienceUpdate:
+      allOf:
+        - type: object
+          required: [version]
+          properties:
+            activity_name:
+              type: string
+              minLength: 1
+              maxLength: 500
+            organization:
+              type: string
+              maxLength: 500
+              nullable: true
+            start_date:
+              type: string
+              format: date
+            end_date:
+              type: string
+              format: date
+              nullable: true
+            is_ongoing:
+              type: boolean
+            version:
+              type: integer
+        - $ref: '#/components/schemas/STARComponents'
+
+    # ==========================================================================
+    # EDUCATION SCHEMAS
+    # ==========================================================================
+
+    Education:
+      type: object
+      required: [id, user_id, institution_name, degree_type, field_of_study, start_date, is_in_progress, version, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        institution_name:
+          type: string
+          example: "University of Technology"
+        degree_type:
+          type: string
+          example: "Bachelor of Science"
+        field_of_study:
+          type: string
+          example: "Computer Science"
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+          nullable: true
+        is_in_progress:
+          type: boolean
+        gpa:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 4.0
+          nullable: true
+          example: 3.8
+        honors:
+          type: string
+          nullable: true
+          example: "Summa Cum Laude"
+        relevant_coursework:
+          type: string
+          nullable: true
+          example: "Data Structures, Algorithms, Machine Learning"
+        version:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    EducationCreate:
+      type: object
+      required: [institution_name, degree_type, field_of_study, start_date]
+      properties:
+        institution_name:
+          type: string
+          minLength: 1
+          maxLength: 500
+        degree_type:
+          type: string
+          minLength: 1
+          maxLength: 200
+        field_of_study:
+          type: string
+          minLength: 1
+          maxLength: 500
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+          nullable: true
+        is_in_progress:
+          type: boolean
+          default: false
+        gpa:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 4.0
+          nullable: true
+        honors:
+          type: string
+          maxLength: 500
+          nullable: true
+        relevant_coursework:
+          type: string
+          maxLength: 2000
+          nullable: true
+
+    EducationUpdate:
+      type: object
+      required: [version]
+      properties:
+        institution_name:
+          type: string
+          minLength: 1
+          maxLength: 500
+        degree_type:
+          type: string
+          minLength: 1
+          maxLength: 200
+        field_of_study:
+          type: string
+          minLength: 1
+          maxLength: 500
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+          nullable: true
+        is_in_progress:
+          type: boolean
+        gpa:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 4.0
+          nullable: true
+        honors:
+          type: string
+          maxLength: 500
+          nullable: true
+        relevant_coursework:
+          type: string
+          maxLength: 2000
+          nullable: true
+        version:
+          type: integer
+
+    # ==========================================================================
+    # ERROR SCHEMAS
+    # ==========================================================================
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Error message
+        code:
+          type: string
+          description: Error code
+        details:
+          type: object
+          description: Additional error details
+          additionalProperties: true
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Validation failed"
+            code: "VALIDATION_ERROR"
+            details:
+              password: "Password must be at least 12 characters and contain letters and numbers"
+
+    Unauthorized:
+      description: Authentication required or invalid token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Authentication required"
+            code: "UNAUTHORIZED"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: "Resource not found"
+            code: "NOT_FOUND"
