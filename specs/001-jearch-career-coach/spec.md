@@ -15,6 +15,14 @@
 - Q: What are the character/length limits for STAR component fields? → A: Set generous limits of 10,000 characters per STAR field (approximately 1,500 words). Display a character counter for each field to help users track their progress.
 - Q: What type of email service should be used for account verification and password reset? → A: Use self-hosted email server (SMTP). The application must include configurable settings for SMTP information (host, port, credentials, etc.) to allow flexible deployment configuration.
 
+### Session 2026-01-13
+
+- Q: What password policy should Jearch enforce? → A: Min 12 chars, letters + numbers, no expiration - NIST recommended, better security
+- Q: How should auto-save behave? → A: Save 2 seconds after user stops typing + visual indicator + save on navigation away - balanced approach
+- Q: When SMTP email sending fails, how should the application handle registration and password reset flows? → A: Allow registration to proceed, queue email for retry, log failure, require verification before access - graceful degradation
+- Q: How should the system handle concurrent edits if a user has multiple browser tabs open? → A: Detect conflicts via versioning, warn user, show merge interface - safest but more complex
+- Q: What should happen when a user tries to export an empty career path with no experiences or education entries? → A: Generate minimal markdown with section headers and placeholder text encouraging user to add content - helpful preview
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - User Registration and Authentication (Priority: P1)
@@ -107,8 +115,8 @@ Job seekers need to export their complete career path (all experiences and educa
 ### Edge Cases
 
 - What happens when a user tries to add an experience with incomplete STAR components? → System allows saving with any combination of filled/empty STAR fields; displays completion indicator to encourage full documentation
-- How does the system handle concurrent edits if a user has multiple browser tabs open?
-- What happens when a user tries to export an empty career path with no experiences or education?
+- How does the system handle concurrent edits if a user has multiple browser tabs open? → System detects conflicts using version tracking (last-modified timestamp), warns user when attempting to save stale data, and shows a merge interface allowing user to review both versions and choose which changes to keep
+- What happens when a user tries to export an empty career path with no experiences or education? → System generates a minimal markdown document with section headers (Professional Experiences, Extra-Professional Experiences, Education) and placeholder text encouraging the user to add content
 - How does the system handle very long STAR descriptions (e.g., 5000+ words)? → System enforces 10,000 character limit per STAR field with character counter; prevents submission beyond limit
 - What happens when education dates overlap or when professional experiences have gaps?
 - How does the system handle special characters or markdown syntax in user-entered text during export?
@@ -120,7 +128,7 @@ Job seekers need to export their complete career path (all experiences and educa
 
 #### Authentication & Account Management
 - **FR-001**: System MUST allow users to register with email and password
-- **FR-002**: System MUST validate email format and require password strength criteria (minimum 8 characters, mix of letters and numbers)
+- **FR-002**: System MUST validate email format and require password strength criteria (minimum 12 characters, mix of letters and numbers, no expiration policy)
 - **FR-003**: System MUST send email confirmation upon registration and require users to verify their email address before they can access any platform features
 - **FR-004**: System MUST allow users to log in with their registered credentials
 - **FR-005**: System MUST provide a "Keep me logged in" option on the login screen that allows users to maintain persistent sessions
@@ -140,6 +148,7 @@ Job seekers need to export their complete career path (all experiences and educa
 - **FR-015**: System MUST provide configurable settings for SMTP email server including host, port, authentication credentials, and sender address
 - **FR-016**: System MUST store application configuration settings securely (SMTP credentials must not be stored in plain text)
 - **FR-017**: System MUST allow administrators to update SMTP configuration without requiring code changes or redeployment
+- **FR-017a**: System MUST handle SMTP failures gracefully by allowing registration to proceed, queuing emails for retry with exponential backoff, logging failures for administrator monitoring, and requiring email verification before granting full platform access
 
 #### Professional Experience Management
 - **FR-018**: System MUST allow users to create professional experiences with required fields: company name, role title, start date, end date (or "current"), and STAR components
@@ -178,13 +187,15 @@ Job seekers need to export their complete career path (all experiences and educa
 - **FR-045**: System MUST preserve STAR component labels in the markdown export
 - **FR-046**: System MUST handle special characters and markdown syntax in user content appropriately during export
 - **FR-047**: System MUST format dates consistently in the export (e.g., "Jan 2020 - Present")
+- **FR-048a**: System MUST generate a valid markdown export even when the career path is empty, including section headers and placeholder text encouraging the user to add content
 
 #### User Experience & Accessibility
 - **FR-048**: System MUST be responsive and function on desktop, tablet, and mobile devices
 - **FR-049**: System MUST provide intuitive navigation between different sections (experiences, education, export)
 - **FR-050**: System MUST provide clear feedback for user actions (save confirmation, error messages, loading states)
-- **FR-051**: System MUST auto-save form data as users type (with debouncing to minimize server requests) to prevent data loss
+- **FR-051**: System MUST auto-save form data 2 seconds after user stops typing, display a visual save indicator, and save on navigation away from the current form to prevent data loss
 - **FR-052**: System MUST be accessible to users with disabilities following WCAG 2.1 AA standards
+- **FR-053**: System MUST detect concurrent edit conflicts using version tracking (e.g., last-modified timestamp), warn users when attempting to save stale data, and provide a merge interface to review and resolve conflicts between versions
 
 ### Key Entities
 
