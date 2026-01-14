@@ -23,6 +23,14 @@
 - Q: How should the system handle concurrent edits if a user has multiple browser tabs open? → A: Detect conflicts via versioning, warn user, show merge interface - safest but more complex
 - Q: What should happen when a user tries to export an empty career path with no experiences or education entries? → A: Generate minimal markdown with section headers and placeholder text encouraging user to add content - helpful preview
 
+### Session 2026-01-14
+
+- Q: What security controls should be in place for data at rest (stored user data, STAR experiences, education records, SMTP credentials)? → A: Database-level encryption for all user data and application secrets (recommended for Supabase deployments)
+- Q: What observability requirements should the system have for monitoring production, logging, and issue detection? → A: Platform-native observability using Vercel and Supabase built-in logging and monitoring capabilities only
+- Q: What should happen when education dates overlap or when professional experiences have gaps? → A: Allow overlaps and gaps - no validation on date ranges, display chronologically as entered
+- Q: How should the system handle special characters or markdown syntax in user-entered text during export? → A: Escape markdown special characters (*, #, [], etc.) so user text displays literally as written
+- Q: What rate limiting strategy should be used for authentication endpoints to protect against brute force attacks? → A: Progressive delays: 3 failed attempts = 5 min delay, 5 attempts = 15 min delay, 10 attempts = 1 hour lockout with email unlock
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - User Registration and Authentication (Priority: P1)
@@ -118,8 +126,8 @@ Job seekers need to export their complete career path (all experiences and educa
 - How does the system handle concurrent edits if a user has multiple browser tabs open? → System detects conflicts using version tracking (last-modified timestamp), warns user when attempting to save stale data, and shows a merge interface allowing user to review both versions and choose which changes to keep
 - What happens when a user tries to export an empty career path with no experiences or education? → System generates a minimal markdown document with section headers (Professional Experiences, Extra-Professional Experiences, Education) and placeholder text encouraging the user to add content
 - How does the system handle very long STAR descriptions (e.g., 5000+ words)? → System enforces 10,000 character limit per STAR field with character counter; prevents submission beyond limit
-- What happens when education dates overlap or when professional experiences have gaps?
-- How does the system handle special characters or markdown syntax in user-entered text during export?
+- What happens when education dates overlap or when professional experiences have gaps? → System allows overlaps and gaps without validation; entries are simply displayed in reverse chronological order as entered by the user
+- How does the system handle special characters or markdown syntax in user-entered text during export? → System escapes markdown special characters (*, #, [], (), `, etc.) so user text displays literally as written in the exported markdown
 - What happens if a user's session expires while they're filling in a long STAR experience? → With "Keep me logged in" enabled and auto-save, sessions persist and data is preserved; without it, session management follows standard web practice
 
 ## Requirements *(mandatory)*
@@ -135,7 +143,8 @@ Job seekers need to export their complete career path (all experiences and educa
 - **FR-006**: System MUST maintain user sessions until explicit logout when "Keep me logged in" is enabled
 - **FR-007**: System MUST allow users to log out and end their session
 - **FR-008**: System MUST provide password reset functionality via email link
-- **FR-009**: System MUST protect against common authentication attacks (brute force, session hijacking)
+- **FR-009**: System MUST protect against brute force attacks using progressive rate limiting: 3 failed login attempts trigger a 5-minute delay, 5 attempts trigger a 15-minute delay, 10 attempts trigger a 1-hour account lockout with email-based unlock mechanism
+- **FR-009a**: System MUST protect against session hijacking through secure session management practices (HttpOnly cookies, secure flags, session rotation)
 
 #### Data Retention & Account Deletion
 - **FR-010**: System MUST retain user data (account, experiences, education) indefinitely until the user explicitly requests account deletion
@@ -146,9 +155,22 @@ Job seekers need to export their complete career path (all experiences and educa
 
 #### Application Settings & Configuration
 - **FR-015**: System MUST provide configurable settings for SMTP email server including host, port, authentication credentials, and sender address
-- **FR-016**: System MUST store application configuration settings securely (SMTP credentials must not be stored in plain text)
+- **FR-016**: System MUST store application configuration settings securely using database-level encryption (SMTP credentials and other application secrets must be encrypted at rest)
 - **FR-017**: System MUST allow administrators to update SMTP configuration without requiring code changes or redeployment
 - **FR-017a**: System MUST handle SMTP failures gracefully by allowing registration to proceed, queuing emails for retry with exponential backoff, logging failures for administrator monitoring, and requiring email verification before granting full platform access
+
+#### Data Security & Privacy
+- **FR-054**: System MUST encrypt all user data at rest using database-level encryption (user accounts, professional experiences, extra-professional experiences, education entries, SMTP credentials)
+- **FR-055**: System MUST leverage Supabase's built-in encryption capabilities for data-at-rest protection
+- **FR-056**: System MUST encrypt data in transit using HTTPS/TLS for all client-server communication
+
+#### Observability & Monitoring
+- **FR-057**: System MUST implement structured logging using JSON format for all application events (authentication, data operations, errors) sent to console output
+- **FR-058**: System MUST log critical events including: user authentication attempts (success/failure), STAR experience operations (create/update/delete), education operations, export generation, SMTP failures, and all application errors
+- **FR-059**: System MUST NOT log sensitive data in application logs (STAR component content, passwords, session tokens, full email addresses in non-authentication contexts)
+- **FR-060**: System MUST rely on Vercel's built-in logging infrastructure for log collection and retention
+- **FR-061**: System MUST rely on Supabase's built-in logging for database operations, authentication events, and API access logs
+- **FR-062**: System MUST use Vercel and Supabase dashboards for production monitoring and issue investigation
 
 #### Professional Experience Management
 - **FR-018**: System MUST allow users to create professional experiences with required fields: company name, role title, start date, end date (or "current"), and STAR components
@@ -162,6 +184,7 @@ Job seekers need to export their complete career path (all experiences and educa
 - **FR-026**: System MUST display professional experiences in reverse chronological order (most recent first)
 - **FR-027**: System MUST allow users to view all their professional experiences in a list view
 - **FR-028**: System MUST allow users to mark a position as "current" (no end date)
+- **FR-028a**: System MUST allow gaps in employment history without validation (date ranges do not need to be continuous)
 
 #### Extra-Professional Experience Management
 - **FR-029**: System MUST allow users to create extra-professional experiences with required fields: activity name, organization/context, start date, end date (or "ongoing"), and STAR components (all STAR fields are optional)
@@ -179,13 +202,14 @@ Job seekers need to export their complete career path (all experiences and educa
 - **FR-039**: System MUST allow users to add optional details: GPA, honors, relevant coursework
 - **FR-040**: System MUST allow users to edit and delete education entries
 - **FR-041**: System MUST display education entries in reverse chronological order
+- **FR-041a**: System MUST allow overlapping education date ranges without validation (e.g., pursuing multiple degrees simultaneously)
 
 #### Career Path Export
 - **FR-042**: System MUST provide a "Export to Markdown" function that generates a complete career path document
 - **FR-043**: System MUST include all professional experiences, extra-professional experiences, and education in the export
 - **FR-044**: System MUST format the markdown export with clear section headings and consistent structure
 - **FR-045**: System MUST preserve STAR component labels in the markdown export
-- **FR-046**: System MUST handle special characters and markdown syntax in user content appropriately during export
+- **FR-046**: System MUST escape markdown special characters (*, #, [], (), `, \, etc.) in all user-entered content during export so text displays literally as written
 - **FR-047**: System MUST format dates consistently in the export (e.g., "Jan 2020 - Present")
 - **FR-048a**: System MUST generate a valid markdown export even when the career path is empty, including section headers and placeholder text encouraging the user to add content
 
