@@ -6,27 +6,30 @@
 
 ---
 
-## 1. Python Backend Framework
+## 1. Full-Stack Framework
 
 ### Decision
-**FastAPI**
+**Next.js 14+ (Full-Stack TypeScript)**
 
 ### Rationale
-FastAPI is optimal for Jearch on Vercel serverless functions due to its automatic OpenAPI documentation, native async/await support for concurrent operations (critical for auto-save debouncing and SMTP), built-in Pydantic validation for request/response models (essential for conflict detection with version tracking), and excellent TypeScript client generation. Performance characteristics align well with serverless constraints (~500-800ms cold starts), with strong community adoption for Vercel deployments. The framework's dependency injection system simplifies Supabase Auth integration through middleware, while its async nature efficiently handles the 2-second debounce auto-save pattern without blocking other requests.
+Next.js 14+ serves as both frontend and backend for Jearch, eliminating the need for a separate Python API layer. This full-stack approach reduces complexity, improves performance (no extra API hop), and keeps the entire codebase in TypeScript. Next.js API Routes and Server Actions handle all backend logic (CRUD operations, auth validation, markdown export) while directly integrating with Supabase. The Vercel AI SDK is built specifically for Next.js, making future AI chatbot features seamless. Server Components enable efficient data fetching, and the App Router provides hybrid rendering (SSR for public pages, CSR for interactive dashboards). Single-language codebase simplifies development, enables type sharing between client/server, and reduces serverless function invocations (better performance and cost).
 
 ### Alternatives Considered
-- **Flask**: Synchronous-by-default nature makes implementing debounced auto-save and concurrent SMTP operations more complex, requiring additional libraries like Flask-Async or worker queues that add cold start overhead on Vercel (~400-600ms base but loses advantage with async additions)
-- **Django**: Excessive framework overhead for serverless - ORM, admin panel, and middleware stack significantly increase cold starts (3-5s vs <1s for FastAPI) and memory footprint, making it unsuitable for Vercel's 50MB deployment limit
+- **Separate Python Backend (FastAPI)**: Rejected because it adds unnecessary complexity (two deployments, two languages, extra API hop with cold starts), when Next.js can handle all backend requirements natively. Python would only be justified for ML workloads or Python-specific libraries, neither of which apply here.
+- **SvelteKit**: Lighter bundle size but smaller ecosystem for AI integration (no Vercel AI SDK equivalent), fewer Supabase examples, and less mature accessibility component libraries. The future AI chatbot feature makes React's ecosystem more valuable.
+- **Remix**: Good full-stack framework but Next.js has better Vercel integration (zero-config), more Supabase examples, and the Vercel AI SDK is Next.js-first.
 
 ### Implementation Notes
-- Deploy pattern: single `api/index.py` file or route-based `api/*.py` structure
-- Use `mangum` adapter for ASGI on Vercel
-- Integrate `supabase-py` client library for database operations
-- JWT validation using `pyjwt` with Supabase JWT secret
+- API Routes in `app/api/` directory for RESTful endpoints
+- Server Actions for form mutations (alternative to API routes)
+- Direct Supabase client integration (no intermediate API layer)
+- JWT validation using `@supabase/ssr` for server-side auth
+- TypeScript types shared between client and server
+- Zod for request/response validation
 
 ---
 
-## 2. Frontend Framework
+## 2. Frontend Architecture (Next.js App Router)
 
 ### Decision
 **Next.js 14+ (App Router with React Server Components)**
@@ -100,10 +103,10 @@ User Action → Supabase Auth → Edge Function (Email Queue) → SMTP Service
 ## 4. Authentication Integration
 
 ### Decision
-**Use Supabase Auth as primary system with JWT validation in Python backend. Frontend handles all auth UI flows via Supabase client SDK; backend validates JWTs on protected endpoints.**
+**Use Supabase Auth as primary system with JWT validation in Next.js API routes. Frontend handles all auth UI flows via Supabase client SDK; API routes validate sessions using Supabase SSR helpers.**
 
 ### Rationale
-Supabase Auth is production-ready and handles all required flows (email verification, password reset, session management) out-of-the-box, eliminating custom auth logic. The architecture leverages Supabase's secure token generation while Python backend validates tokens for API authorization, providing defense-in-depth. This minimizes security risks, reduces development time, and scales well with Vercel's serverless architecture since authentication state is managed client-side with JWTs.
+Supabase Auth is production-ready and handles all required flows (email verification, password reset, session management) out-of-the-box, eliminating custom auth logic. The architecture leverages Supabase's secure token generation while Next.js API routes validate sessions for API authorization. The `@supabase/ssr` package provides server-side helpers for Next.js that handle cookie-based sessions, automatic token refresh, and secure server-side auth validation. This minimizes security risks, reduces development time, and scales well with Vercel's serverless architecture.
 
 ### Implementation Notes
 
@@ -140,23 +143,29 @@ Supabase Auth is production-ready and handles all required flows (email verifica
   - Backend defense: Database trigger on `auth.users` to reject weak passwords
   - Set minimum length to 12 in Supabase Dashboard
 
-#### Python Backend JWT Validation
-```python
-import jwt
-from supabase import create_client
+#### Next.js API Routes JWT Validation
+```typescript
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
+import { cookies } from 'next/headers'
+import { NextResponse } from 'next/server'
 
-def verify_jwt(token: str):
-    payload = jwt.decode(
-        token,
-        os.getenv("SUPABASE_JWT_SECRET"),
-        algorithms=["HS256"],
-        audience="authenticated"
-    )
-    
-    if not payload.get("email_confirmed_at"):
-        raise Exception("Email not verified")
-    
-    return payload  # Contains user_id, email, role
+export async function GET(request: Request) {
+  const supabase = createRouteHandlerClient({ cookies })
+  
+  // Get authenticated user from session
+  const { data: { user }, error } = await supabase.auth.getUser()
+  
+  if (error || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  
+  if (!user.email_confirmed_at) {
+    return NextResponse.json({ error: 'Email not verified' }, { status: 403 })
+  }
+  
+  // User is authenticated and verified
+  return NextResponse.json({ userId: user.id, email: user.email })
+}
 ```
 
 #### Session Security
@@ -170,14 +179,10 @@ def verify_jwt(token: str):
 - **RLS**: Enable Row-Level Security policies for user-level data isolation
 
 ### Environment Variables
-**Backend (Vercel)**:
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY` (admin operations, never expose)
-- `SUPABASE_JWT_SECRET` (JWT verification)
-
-**Frontend**:
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
+**Next.js (Vercel)**:
+- `NEXT_PUBLIC_SUPABASE_URL` (public - client-side)
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` (public - client-side)
+- `SUPABASE_SERVICE_ROLE_KEY` (private - server-side only, for admin operations)
 
 ### Alternatives Considered
 - **Custom Backend Auth**: Building email verification, password reset, session management from scratch increases development time and security risk
@@ -192,53 +197,60 @@ def verify_jwt(token: str):
 ### Structure
 ```
 jearch/
-├── backend/
-│   ├── api/                    # Vercel serverless functions
-│   │   ├── index.py           # FastAPI app entry
-│   │   ├── experiences.py     # Experience CRUD
-│   │   ├── education.py       # Education CRUD
-│   │   └── export.py          # Markdown export
-│   ├── requirements.txt
-│   └── vercel.json
+├── app/                       # Next.js App Router (frontend + backend)
+│   ├── (auth)/               # Auth routes (login, signup, reset)
+│   ├── dashboard/            # Protected dashboard
+│   ├── experiences/          # Experience management pages
+│   ├── education/            # Education management pages
+│   ├── export/               # Career path export pages
+│   ├── api/                  # Next.js API Routes (backend)
+│   │   ├── experiences/      # Experience CRUD endpoints
+│   │   ├── education/        # Education CRUD endpoints
+│   │   └── export/           # Markdown export endpoints
+│   └── layout.tsx            # Root layout
 │
-├── frontend/
-│   ├── app/                   # Next.js App Router
-│   │   ├── (auth)/           # Auth routes (login, signup, reset)
-│   │   ├── dashboard/        # Protected dashboard
-│   │   ├── experiences/      # Experience management
-│   │   ├── education/        # Education management
-│   │   └── export/           # Career path export
-│   ├── components/           # Reusable UI components
-│   ├── lib/                  # Utilities (Supabase client)
-│   ├── package.json
-│   └── next.config.js
+├── components/               # Reusable UI components
+│   ├── ui/                   # Base UI components (buttons, forms)
+│   └── features/             # Feature-specific components
 │
-└── supabase/
-    ├── migrations/           # Database schema
-    └── functions/            # Edge Functions (email queue)
+├── lib/                      # Utilities and shared code
+│   ├── supabase/            # Supabase client setup
+│   ├── validations/         # Zod schemas
+│   └── utils/               # Helper functions
+│
+├── supabase/
+│   ├── migrations/          # Database schema
+│   └── functions/           # Edge Functions (email queue)
+│
+├── public/                  # Static assets
+├── package.json
+├── next.config.js
+└── tsconfig.json
 ```
 
 ### Rationale
-- Separate backend and frontend for independent deployment and scaling
-- Backend contains Python serverless functions for Vercel
-- Frontend is Next.js application with App Router
-- Supabase folder contains database migrations and Edge Functions
-- Mono-repo structure simplifies development while maintaining separation
+- Single Next.js application handles both frontend and backend (full-stack TypeScript)
+- API Routes in `app/api/` provide RESTful endpoints without separate backend deployment
+- Eliminates complexity of managing two separate applications and languages
+- Type sharing between client and server code reduces bugs
+- Single deployment target on Vercel with zero configuration
+- All backend logic (CRUD, auth validation, export) runs as serverless functions automatically
+- Supabase folder remains separate for database migrations and Edge Functions (email queue)
 
 ---
 
 ## 6. Testing Strategy
 
-### Backend Testing
-- **Framework**: pytest
-- **Contract Tests**: OpenAPI schema validation
-- **Integration Tests**: Supabase client operations
-- **Unit Tests**: Business logic, validation functions
+### API Routes Testing
+- **Framework**: Jest + Next.js testing utilities
+- **Unit Tests**: API route handlers, validation functions
+- **Integration Tests**: Supabase client operations, auth flows
+- **Mocking**: Mock Supabase client for isolated tests
 
 ### Frontend Testing
 - **Framework**: Jest + React Testing Library
 - **Unit Tests**: Component rendering, form validation
-- **Integration Tests**: Supabase Auth flows, API calls
+- **Integration Tests**: Supabase Auth flows, API route calls
 - **E2E Tests**: Playwright for critical user journeys
 
 ### E2E Test Scenarios
@@ -253,8 +265,7 @@ jearch/
 
 | Decision Area | Choice | Primary Reason |
 |--------------|--------|----------------|
-| Backend Framework | FastAPI | Async support, auto-docs, Vercel-optimized |
-| Frontend Framework | Next.js 14+ | Vercel-native, mature ecosystem, hybrid rendering |
+| Full-Stack Framework | Next.js 14+ (TypeScript) | Single codebase, API Routes for backend, Vercel-native, hybrid rendering |
 | Database/Auth | Supabase | All-in-one solution, built-in auth, PostgreSQL |
 | Email Strategy | Supabase Auth + Edge Functions | Native flows + retry queue + monitoring |
 | Hosting | Vercel | Serverless, zero-config, automatic scaling |

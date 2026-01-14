@@ -1,42 +1,37 @@
-# Implementation Plan: Jearch - Virtual Career Coach
+# Implementation Plan: [FEATURE]
 
-**Branch**: `001-jearch-career-coach` | **Date**: 2026-01-13 | **Spec**: [spec.md](./spec.md)
-**Input**: Feature specification from `/specs/001-jearch-career-coach/spec.md`
+**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
+**Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
 
 **Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/commands/plan.md` for the execution workflow.
 
 ## Summary
 
-Build a web application for job seekers to document their career path using STAR format (Situation, Task, Action, Result) for professional and extra-professional experiences. Core features include authentication with email verification, CRUD operations for experiences and education entries, character-limited text fields with completion indicators, and markdown export functionality. The application requires configurable SMTP for email services and must be responsive across devices.
+[Extract from feature spec: primary requirement + technical approach from research]
 
 ## Technical Context
 
-**Language/Version**: Python 3.11+ (backend API), JavaScript/TypeScript (frontend)  
-**Primary Dependencies**: 
-- Backend: FastAPI (async support, auto-docs, Vercel-optimized)
-- Database/Auth: Supabase (PostgreSQL, built-in auth, real-time subscriptions)
-- Frontend: Next.js 14+ (App Router, React Server Components, Vercel-native)
-- Email: Supabase Auth + Edge Functions + SMTP (Resend/SendGrid/SES)
+<!--
+  ACTION REQUIRED: Replace the content in this section with the technical details
+  for the project. The structure here is presented in advisory capacity to guide
+  the iteration process.
+-->
 
-**Storage**: Supabase (managed PostgreSQL) for all data (users, experiences, education, configuration)  
-**Testing**: pytest (Python backend), Jest/Vitest (frontend), Playwright (E2E)  
-**Target Platform**: Vercel (serverless functions + static hosting), responsive web UI for desktop/tablet/mobile browsers  
-**Project Type**: Web application (Python serverless backend + modern frontend framework)  
-**Performance Goals**: <2s page loads (FR-048), 100+ concurrent users (SC-006)  
-**Constraints**: 
-- Vercel hosting (serverless limitations, cold starts)
-- Supabase free tier considerations (connection pooling, row limits)
-- HTTPS required for authentication security
-- SMTP configuration required (via Supabase or external service)
-- WCAG 2.1 AA accessibility
-
-**Scale/Scope**: Initial release targets individual job seekers, ~10-15 screens (auth flows, dashboard, experience/education CRUD, export), character limits per field (10,000 chars per STAR component)
+**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
+**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
+**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
+**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
+**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
+**Project Type**: [single/web/mobile - determines source structure]  
+**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
+**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
+**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
 
 ## Constitution Check
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-**Status**: Constitution file is a template with no specific project principles defined yet. No gates to enforce at this time. Will need to establish project constitution if architectural constraints are required.
+[Gates determined based on constitution file]
 
 ## Project Structure
 
@@ -53,33 +48,51 @@ specs/[###-feature]/
 ```
 
 ### Source Code (repository root)
+<!--
+  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
+  for this feature. Delete unused options and expand the chosen structure with
+  real paths (e.g., apps/admin, packages/something). The delivered plan must
+  not include Option labels.
+-->
 
 ```text
+# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
+src/
+├── models/
+├── services/
+├── cli/
+└── lib/
+
+tests/
+├── contract/
+├── integration/
+└── unit/
+
+# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
 backend/
 ├── src/
-│   ├── models/          # User, ProfessionalExperience, ExtraProfessionalExperience, Education
-│   ├── services/        # Auth, SMTP, Experience management, Export
-│   ├── api/             # REST/GraphQL endpoints
-│   ├── middleware/      # Authentication, validation
-│   └── config/          # SMTP and application settings
+│   ├── models/
+│   ├── services/
+│   └── api/
 └── tests/
-    ├── contract/        # API contract tests
-    ├── integration/     # Database + service integration
-    └── unit/            # Model and service unit tests
 
 frontend/
 ├── src/
-│   ├── components/      # Reusable UI components (forms, cards, indicators)
-│   ├── pages/           # Auth, Dashboard, Experience CRUD, Education, Export
-│   ├── services/        # API client, auth state management
-│   ├── hooks/           # React hooks for data fetching, form handling
-│   └── styles/          # CSS/styling (responsive, accessible)
+│   ├── components/
+│   ├── pages/
+│   └── services/
 └── tests/
-    ├── integration/     # E2E user flows
-    └── unit/            # Component and hook tests
+
+# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
+api/
+└── [same as backend above]
+
+ios/ or android/
+└── [platform-specific structure: feature modules, UI flows, platform tests]
 ```
 
-**Structure Decision**: Web application structure with separate backend and frontend. Backend handles authentication, data persistence, email services, and business logic. Frontend provides responsive UI for all user interactions. This separation allows independent scaling and development of each tier.
+**Structure Decision**: [Document the selected structure and reference the real
+directories captured above]
 
 ## Complexity Tracking
 

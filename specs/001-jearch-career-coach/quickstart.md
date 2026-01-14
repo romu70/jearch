@@ -1,7 +1,7 @@
 # Quickstart Guide: Jearch Development
 
 **Feature**: 001-jearch-career-coach  
-**Date**: 2026-01-13  
+**Date**: 2026-01-14  
 **Target**: Developers setting up the Jearch project for the first time
 
 ---
@@ -9,7 +9,6 @@
 ## Prerequisites
 
 - **Node.js**: 18.x or later
-- **Python**: 3.11 or later
 - **Git**: For version control
 - **Supabase Account**: Create at [supabase.com](https://supabase.com)
 - **Vercel Account**: Create at [vercel.com](https://vercel.com)
@@ -21,18 +20,20 @@
 
 ```
 jearch/
-├── backend/           # Python FastAPI serverless functions
-├── frontend/          # Next.js 14+ App Router application
+├── app/               # Next.js App Router (frontend + backend)
+├── components/        # Reusable UI components
+├── lib/               # Utilities and shared code
 ├── supabase/          # Database migrations & Edge Functions
 └── specs/             # Feature specifications & documentation
 ```
 
 **Stack**:
-- **Frontend**: Next.js 14+ (React), TypeScript, Tailwind CSS
-- **Backend**: Python 3.11+, FastAPI, Supabase Python client
+- **Full-Stack Framework**: Next.js 14+ (TypeScript, React)
+- **Backend**: Next.js API Routes (serverless functions)
 - **Database/Auth**: Supabase (PostgreSQL + Auth)
-- **Hosting**: Vercel (frontend + backend serverless)
+- **Hosting**: Vercel
 - **Email**: Supabase Auth + Edge Functions + SMTP (Resend/SendGrid/SES)
+- **UI**: Tailwind CSS, Radix UI
 
 ---
 
@@ -68,8 +69,6 @@ git checkout 001-jearch-career-coach
    - **Project URL**: `https://xxxxx.supabase.co`
    - **Anon (public) key**: `eyJhbG...`
    - **Service role key**: `eyJhbG...` (keep this secret!)
-3. Navigate to **Settings** → **Auth** → **JWT Settings**
-4. Copy **JWT Secret**: Used for token validation in Python backend
 
 ### 2.3 Configure Supabase Auth
 
@@ -92,78 +91,18 @@ npm install -g supabase
 cd supabase
 supabase link --project-ref <your-project-ref>
 
-# Run migrations
+# Run migrations (when available)
 supabase db push
 ```
 
 ---
 
-## Step 3: Setup Backend (Python FastAPI)
+## Step 3: Setup Next.js Application
 
-### 3.1 Create Virtual Environment
-
-```bash
-cd backend
-
-# Create virtual environment
-python3 -m venv venv
-
-# Activate virtual environment
-# macOS/Linux:
-source venv/bin/activate
-# Windows:
-venv\Scripts\activate
-```
-
-### 3.2 Install Dependencies
+### 3.1 Install Dependencies
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# requirements.txt should include:
-# fastapi==0.109.0
-# supabase==2.3.0
-# pyjwt==2.8.0
-# python-dotenv==1.0.0
-# uvicorn==0.27.0
-```
-
-### 3.3 Configure Environment Variables
-
-Create `backend/.env`:
-
-```env
-# Supabase Configuration
-SUPABASE_URL=https://xxxxx.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-SUPABASE_JWT_SECRET=your-jwt-secret
-
-# Environment
-ENVIRONMENT=development
-```
-
-### 3.4 Run Backend Locally
-
-```bash
-# Start FastAPI server
-uvicorn api.index:app --reload --port 8000
-
-# API will be available at http://localhost:8000
-# OpenAPI docs at http://localhost:8000/docs
-```
-
----
-
-## Step 4: Setup Frontend (Next.js)
-
-### 4.1 Install Dependencies
-
-```bash
-cd ../frontend
-
-# Install dependencies
+# From project root
 npm install
 
 # Key dependencies:
@@ -171,45 +110,49 @@ npm install
 # - react, react-dom
 # - @supabase/supabase-js
 # - @supabase/auth-helpers-nextjs
+# - @supabase/ssr
 # - react-hook-form
 # - zod (validation)
 # - tailwindcss
 # - @radix-ui/react-* (accessible components)
 ```
 
-### 4.2 Configure Environment Variables
+### 3.2 Configure Environment Variables
 
-Create `frontend/.env.local`:
+Create `.env.local` at project root:
 
 ```env
-# Supabase Configuration (Frontend)
+# Supabase Configuration (Public - used by client)
 NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 
-# Backend API URL
-NEXT_PUBLIC_API_URL=http://localhost:8000/api
+# Supabase Configuration (Private - server-side only)
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
 # Environment
 NEXT_PUBLIC_ENVIRONMENT=development
 ```
 
-### 4.3 Run Frontend Locally
+**Important**: Never commit `.env.local` to version control. Add it to `.gitignore`.
+
+### 3.3 Run Development Server
 
 ```bash
 # Start Next.js development server
 npm run dev
 
 # App will be available at http://localhost:3000
+# API routes available at http://localhost:3000/api/*
 ```
 
 ---
 
-## Step 5: Setup Supabase Edge Functions (Email Queue)
+## Step 4: Setup Supabase Edge Functions (Email Queue)
 
-### 5.1 Create Edge Function
+### 4.1 Create Edge Function
 
 ```bash
-cd ../supabase/functions
+cd supabase/functions
 
 # Create email-processor function
 supabase functions new email-processor
@@ -217,7 +160,7 @@ supabase functions new email-processor
 # Edit email-processor/index.ts with the implementation from research.md
 ```
 
-### 5.2 Deploy Edge Function
+### 4.2 Deploy Edge Function
 
 ```bash
 # Deploy to Supabase
@@ -227,50 +170,44 @@ supabase functions deploy email-processor
 supabase secrets set RESEND_API_KEY=your-resend-api-key
 ```
 
-### 5.3 Setup Cron Job
+### 4.3 Setup Cron Job
 
-Option A: **Supabase Cron** (if available in your plan)
+**Option A: Supabase Cron** (if available in your plan)
 1. Go to Database → Cron Jobs
 2. Create new job running every 5 minutes
 3. Call email-processor function
 
-Option B: **Vercel Cron** (recommended for free tier)
+**Option B: Vercel Cron** (recommended for free tier)
 - Configure in `vercel.json` (see deployment section)
 
 ---
 
-## Step 6: Local Development Workflow
+## Step 5: Local Development Workflow
 
-### 6.1 Start All Services
+### 5.1 Start Development
 
 ```bash
-# Terminal 1: Backend
-cd backend
-source venv/bin/activate
-uvicorn api.index:app --reload --port 8000
-
-# Terminal 2: Frontend
-cd frontend
+# Start Next.js (includes both frontend and API routes)
 npm run dev
 
-# Terminal 3: Supabase (optional, for local DB)
+# Optional: Start local Supabase for testing
 cd supabase
 supabase start
 ```
 
-### 6.2 Access the Application
+### 5.2 Access the Application
 
 - **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8000
-- **API Docs**: http://localhost:8000/docs
+- **API Routes**: http://localhost:3000/api/*
 - **Supabase Dashboard**: https://app.supabase.co/project/<your-project-ref>
+- **Local Supabase** (if running): http://localhost:54321
 
-### 6.3 Test User Flow
+### 5.3 Test User Flow
 
 1. **Register**: Go to http://localhost:3000/signup
    - Email: test@example.com
    - Password: SecurePass123 (min 12 chars, letters + numbers)
-2. **Verify Email**: Check Supabase dashboard for verification link (in development, emails aren't sent)
+2. **Verify Email**: Check Supabase dashboard for verification link (in development, emails may not be sent)
 3. **Login**: Go to http://localhost:3000/login
 4. **Add Experience**: Navigate to dashboard and create a professional experience
 5. **Test Auto-save**: Type in STAR fields and wait 2 seconds (should auto-save)
@@ -278,56 +215,33 @@ supabase start
 
 ---
 
-## Step 7: Deploy to Vercel
+## Step 6: Deploy to Vercel
 
-### 7.1 Install Vercel CLI
+### 6.1 Install Vercel CLI
 
 ```bash
 npm install -g vercel
 ```
 
-### 7.2 Configure Vercel
+### 6.2 Configure Vercel
 
 Create `vercel.json` at project root:
 
 ```json
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "frontend/package.json",
-      "use": "@vercel/next"
-    },
-    {
-      "src": "backend/api/*.py",
-      "use": "@vercel/python"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "backend/api/$1.py"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "frontend/$1"
-    }
-  ],
   "crons": [
     {
       "path": "/api/cron/process-emails",
       "schedule": "*/5 * * * *"
     }
-  ],
-  "env": {
-    "SUPABASE_URL": "@supabase-url",
-    "SUPABASE_SERVICE_ROLE_KEY": "@supabase-service-role-key",
-    "SUPABASE_JWT_SECRET": "@supabase-jwt-secret"
-  }
+  ]
 }
 ```
 
-### 7.3 Add Environment Variables to Vercel
+**Note**: Next.js deployment is automatically detected by Vercel. No build configuration needed.
+
+### 6.3 Add Environment Variables to Vercel
 
 ```bash
 # Login to Vercel
@@ -337,14 +251,17 @@ vercel login
 vercel link
 
 # Add environment variables
-vercel env add SUPABASE_URL
-vercel env add SUPABASE_SERVICE_ROLE_KEY
-vercel env add SUPABASE_JWT_SECRET
 vercel env add NEXT_PUBLIC_SUPABASE_URL
 vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY
+vercel env add SUPABASE_SERVICE_ROLE_KEY
 ```
 
-### 7.4 Deploy
+Alternatively, add them via Vercel Dashboard:
+1. Go to your project settings
+2. Navigate to "Environment Variables"
+3. Add each variable for Production, Preview, and Development
+
+### 6.4 Deploy
 
 ```bash
 # Deploy to production
@@ -355,7 +272,7 @@ vercel --prod
 
 ---
 
-## Step 8: Configure SMTP for Production Emails
+## Step 7: Configure SMTP for Production Emails
 
 ### Option A: Resend (Recommended)
 
@@ -388,16 +305,17 @@ vercel --prod
 ### Run Tests
 
 ```bash
-# Backend tests
-cd backend
-pytest
-
-# Frontend tests
-cd frontend
+# Run all tests
 npm test
 
-# E2E tests
+# Run tests in watch mode
+npm test -- --watch
+
+# Run E2E tests with Playwright
 npm run test:e2e
+
+# Run specific test file
+npm test -- path/to/test.test.ts
 ```
 
 ### Database Migrations
@@ -414,35 +332,65 @@ supabase db push
 supabase db reset
 ```
 
+### Build for Production
+
+```bash
+# Build Next.js application
+npm run build
+
+# Start production server locally
+npm start
+
+# Analyze bundle size
+npm run build -- --analyze
+```
+
 ### View Logs
 
 ```bash
-# Backend logs (local)
-# Check terminal running uvicorn
-
-# Frontend logs (local)
+# Development logs
 # Check terminal running npm run dev
 
 # Production logs
 vercel logs
 
-# Supabase logs
+# Supabase Edge Function logs
 supabase functions logs email-processor
+
+# View specific deployment logs
+vercel logs <deployment-url>
+```
+
+### Linting and Formatting
+
+```bash
+# Run ESLint
+npm run lint
+
+# Fix auto-fixable issues
+npm run lint -- --fix
+
+# Format with Prettier (if configured)
+npm run format
 ```
 
 ### Debugging
 
-```bash
-# Backend debugging
-# Add breakpoints in VS Code and run in debug mode
+**Frontend/API Routes**:
+- Use Chrome DevTools or browser inspector
+- Add `debugger` statements in code
+- Check Network tab for API calls
+- Use React DevTools extension
 
-# Frontend debugging
-# Use React DevTools browser extension
-# Check Network tab in browser DevTools
+**Server Components**:
+- Check terminal output (server-side logs)
+- Use `console.log` in Server Components
+- Logs appear in terminal, not browser console
 
-# Database queries
-# Use Supabase SQL Editor in dashboard
-```
+**Database Queries**:
+- Use Supabase SQL Editor in dashboard
+- Enable query logging in Supabase settings
+- Check Postgres logs in Supabase dashboard
 
 ---
 
@@ -455,35 +403,38 @@ supabase functions logs email-processor
 2. Find user
 3. Click "..." → "Confirm email"
 
-### Issue: CORS errors when calling API
+### Issue: CORS errors when calling API routes
 
-**Solution**: Check CORS configuration in FastAPI:
-```python
-from fastapi.middleware.cors import CORSMiddleware
+**Solution**: Next.js API routes run on same origin, so CORS shouldn't be an issue. If you see CORS errors:
+1. Verify you're calling `/api/*` routes, not external URLs
+2. Check Supabase CORS settings in Dashboard → Settings → API
+3. Ensure you're not mixing local and deployed URLs
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://jearch.vercel.app"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-```
+### Issue: Environment variables not loading
 
-### Issue: JWT validation fails
+**Solution**: 
+1. Verify `.env.local` exists at project root
+2. Restart dev server after adding new variables
+3. Public variables must start with `NEXT_PUBLIC_`
+4. Private variables (no prefix) are only available server-side
+5. Don't use `.env` - use `.env.local` for local development
 
-**Solution**: Verify JWT_SECRET matches between Supabase and backend `.env`:
-```bash
-# Get from Supabase dashboard: Settings → Auth → JWT Settings
-```
+### Issue: Supabase client errors
+
+**Solution**:
+1. Verify credentials in `.env.local` are correct
+2. Check Supabase project is running (not paused)
+3. Verify API keys haven't been rotated
+4. Check network connectivity to Supabase
 
 ### Issue: Vercel deployment fails
 
 **Solution**: 
 1. Check build logs in Vercel dashboard
-2. Verify all environment variables are set
-3. Ensure `vercel.json` is correctly configured
-4. Check Python version compatibility
+2. Verify all environment variables are set in Vercel
+3. Run `npm run build` locally to test build process
+4. Check for TypeScript errors: `npm run type-check`
+5. Verify Node.js version in `package.json` engines field
 
 ### Issue: Auto-save not working
 
@@ -491,7 +442,68 @@ app.add_middleware(
 1. Check browser console for errors
 2. Verify debounce logic in React Hook Form
 3. Check Network tab for API calls
-4. Verify backend endpoint is accessible
+4. Verify API route is accessible: `/api/experiences` or `/api/education`
+5. Check Supabase Row Level Security policies allow updates
+
+### Issue: TypeScript errors
+
+**Solution**:
+1. Run `npm run type-check` to see all errors
+2. Ensure `@types/*` packages are installed
+3. Check `tsconfig.json` is properly configured
+4. Restart TypeScript server in VS Code: Cmd+Shift+P → "Restart TypeScript Server"
+
+---
+
+## Development Best Practices
+
+### Project Structure
+
+```
+app/
+├── (auth)/              # Auth-related routes (login, signup)
+│   ├── login/
+│   └── signup/
+├── dashboard/           # Protected dashboard routes
+├── api/                 # API Routes (backend)
+│   ├── experiences/     # Experience CRUD
+│   ├── education/       # Education CRUD
+│   └── export/          # Export functionality
+└── layout.tsx           # Root layout
+
+components/
+├── ui/                  # Base UI components
+└── features/            # Feature-specific components
+
+lib/
+├── supabase/            # Supabase client configuration
+├── validations/         # Zod schemas
+└── utils/               # Helper functions
+```
+
+### Code Organization
+
+- **Server Components**: Default in App Router, use for data fetching
+- **Client Components**: Add `'use client'` for interactivity
+- **API Routes**: Place in `app/api/` for backend logic
+- **Shared Types**: Define in `lib/types/` for client/server sharing
+- **Validation**: Use Zod schemas in `lib/validations/`
+
+### Authentication
+
+- Use `@supabase/ssr` helpers for server-side auth
+- Client-side: `createClientComponentClient()`
+- Server Components: `createServerComponentClient()`
+- API Routes: `createRouteHandlerClient()`
+- Middleware: `createMiddlewareClient()`
+
+### Performance Tips
+
+- Use Server Components by default for better performance
+- Enable caching for API routes: `export const revalidate = 60`
+- Use `loading.tsx` for skeleton loading states
+- Optimize images with Next.js `<Image>` component
+- Enable static generation where possible
 
 ---
 
@@ -499,20 +511,23 @@ app.add_middleware(
 
 1. **Read the Full Spec**: Review `/specs/001-jearch-career-coach/spec.md`
 2. **Review Data Model**: Study `/specs/001-jearch-career-coach/data-model.md`
-3. **Explore API**: Check `/specs/001-jearch-career-coach/contracts/openapi.yaml`
-4. **Implement Features**: Follow tasks in `/specs/001-jearch-career-coach/tasks.md` (generated separately)
+3. **Explore API Contracts**: Check `/specs/001-jearch-career-coach/contracts/`
+4. **Implement Features**: Follow tasks in `/specs/001-jearch-career-coach/tasks.md` (when generated)
 5. **Write Tests**: See testing strategy in `research.md`
 
 ---
 
 ## Useful Resources
 
-- **Supabase Docs**: https://supabase.com/docs
 - **Next.js Docs**: https://nextjs.org/docs
-- **FastAPI Docs**: https://fastapi.tiangolo.com
+- **Next.js App Router**: https://nextjs.org/docs/app
+- **Supabase Docs**: https://supabase.com/docs
+- **Supabase Auth with Next.js**: https://supabase.com/docs/guides/auth/auth-helpers/nextjs
 - **Vercel Docs**: https://vercel.com/docs
 - **React Hook Form**: https://react-hook-form.com
+- **Zod Validation**: https://zod.dev
 - **Tailwind CSS**: https://tailwindcss.com/docs
+- **Radix UI**: https://www.radix-ui.com
 
 ---
 
@@ -523,7 +538,8 @@ For questions or issues:
 2. Review feature specification in `/specs/001-jearch-career-coach/`
 3. Check Supabase dashboard logs
 4. Review Vercel deployment logs
-5. Consult team documentation
+5. Search Next.js and Supabase documentation
+6. Consult team documentation
 
 ---
 

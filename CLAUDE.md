@@ -4,26 +4,33 @@ Auto-generated from all feature plans. Last updated: 2026-01-13
 
 ## Active Technologies
 
-- Python 3.11+ (backend API), JavaScript/TypeScript (frontend) (001-jearch-career-coach)
+- Next.js 14+ (TypeScript full-stack framework) (001-jearch-career-coach)
+- Supabase (Database, Auth, Edge Functions)
+- Vercel (Hosting)
 
 ## Project Structure
 
 ```text
-src/
-tests/
+app/              # Next.js App Router (pages + API routes)
+components/       # Reusable UI components
+lib/              # Utilities and shared code
+supabase/         # Database migrations and Edge Functions
 ```
 
 ## Commands
 
-cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLOGIES] pytest [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLOGIES] ruff check .
+npm run dev       # Start development server
+npm run build     # Build for production
+npm run test      # Run Jest tests
+npm run lint      # Run ESLint
 
 ## Code Style
 
-Python 3.11+ (backend API), JavaScript/TypeScript (frontend): Follow standard conventions
+TypeScript/Next.js: Follow Next.js conventions, use TypeScript strict mode
 
 ## Recent Changes
 
-- 001-jearch-career-coach: Added Python 3.11+ (backend API), JavaScript/TypeScript (frontend)
+- 001-jearch-career-coach: Migrated from Python backend to Next.js full-stack (TypeScript only)
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->
