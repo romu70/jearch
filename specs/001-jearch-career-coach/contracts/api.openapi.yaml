@@ -1,0 +1,948 @@
+openapi: 3.0.3
+info:
+  title: Jearch API
+  description: API pour la plateforme Jearch - Coach de carrière virtuel
+  version: 1.0.0
+  contact:
+    name: Jearch Team
+
+servers:
+  - url: https://jearch.vercel.app/api
+    description: Production
+  - url: http://localhost:3000/api
+    description: Développement local
+
+tags:
+  - name: Authentication
+    description: Endpoints d'authentification (inscription, connexion, réinitialisation)
+  - name: Professional Experiences
+    description: Gestion des expériences professionnelles (format STAR)
+  - name: Extra-Professional Experiences
+    description: Gestion des expériences extra-professionnelles
+  - name: Education
+    description: Gestion de la formation
+  - name: Export
+    description: Export du parcours professionnel
+  - name: Configuration
+    description: Configuration de l'application (admin uniquement)
+
+paths:
+  # ========== AUTHENTICATION ==========
+  /auth/register:
+    post:
+      tags: [Authentication]
+      summary: Inscription d'un nouvel utilisateur
+      description: Crée un compte utilisateur et envoie un email de vérification
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: "utilisateur@example.com"
+                password:
+                  type: string
+                  format: password
+                  minLength: 12
+                  example: "MotDePasse123"
+                  description: "Min 12 caractères, lettres + chiffres"
+      responses:
+        '201':
+          description: Compte créé avec succès. Email de vérification envoyé.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  userId:
+                    type: string
+                    format: uuid
+                  message:
+                    type: string
+                    example: "Compte créé. Vérifiez votre email."
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Email déjà utilisé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: Connexion utilisateur
+      description: Authentifie un utilisateur et retourne un token de session
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+                rememberMe:
+                  type: boolean
+                  default: false
+                  description: "Option 'Rester connecté'"
+      responses:
+        '200':
+          description: Connexion réussie
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                  refreshToken:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Email ou mot de passe incorrect
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Trop de tentatives. Compte verrouillé temporairement.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  retryAfter:
+                    type: integer
+                    description: "Secondes avant prochaine tentative autorisée"
+
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Déconnexion utilisateur
+      operationId: logout
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Déconnexion réussie
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/reset-password:
+    post:
+      tags: [Authentication]
+      summary: Demande de réinitialisation de mot de passe
+      operationId: resetPassword
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Email de réinitialisation envoyé (si l'email existe)
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  # ========== PROFESSIONAL EXPERIENCES ==========
+  /experiences/professional:
+    get:
+      tags: [Professional Experiences]
+      summary: Liste des expériences professionnelles de l'utilisateur
+      operationId: listProfessionalExperiences
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [date_desc, date_asc]
+            default: date_desc
+      responses:
+        '200':
+          description: Liste des expériences
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProfessionalExperience'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Professional Experiences]
+      summary: Créer une nouvelle expérience professionnelle
+      operationId: createProfessionalExperience
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfessionalExperienceInput'
+      responses:
+        '201':
+          description: Expérience créée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfessionalExperience'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /experiences/professional/{id}:
+    get:
+      tags: [Professional Experiences]
+      summary: Obtenir une expérience professionnelle par ID
+      operationId: getProfessionalExperience
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ExperienceId'
+      responses:
+        '200':
+          description: Détails de l'expérience
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfessionalExperience'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [Professional Experiences]
+      summary: Mettre à jour une expérience professionnelle
+      operationId: updateProfessionalExperience
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ExperienceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ProfessionalExperienceInput'
+                - type: object
+                  required: [updatedAt]
+                  properties:
+                    updatedAt:
+                      type: string
+                      format: date-time
+                      description: "Timestamp de la dernière modification (détection de conflits)"
+      responses:
+        '200':
+          description: Expérience mise à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfessionalExperience'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Conflit détecté (modification concurrente)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Conflit détecté"
+                  conflict:
+                    type: boolean
+                    example: true
+                  serverData:
+                    $ref: '#/components/schemas/ProfessionalExperience'
+                  serverUpdatedAt:
+                    type: string
+                    format: date-time
+
+    delete:
+      tags: [Professional Experiences]
+      summary: Supprimer une expérience professionnelle
+      operationId: deleteProfessionalExperience
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ExperienceId'
+      responses:
+        '204':
+          description: Expérience supprimée
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ========== EXTRA-PROFESSIONAL EXPERIENCES ==========
+  /experiences/extra-professional:
+    get:
+      tags: [Extra-Professional Experiences]
+      summary: Liste des expériences extra-professionnelles
+      operationId: listExtraProfessionalExperiences
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Liste des expériences
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ExtraProfessionalExperience'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Extra-Professional Experiences]
+      summary: Créer une nouvelle expérience extra-professionnelle
+      operationId: createExtraProfessionalExperience
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExtraProfessionalExperienceInput'
+      responses:
+        '201':
+          description: Expérience créée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtraProfessionalExperience'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /experiences/extra-professional/{id}:
+    get:
+      tags: [Extra-Professional Experiences]
+      summary: Obtenir une expérience extra-professionnelle par ID
+      operationId: getExtraProfessionalExperience
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ExperienceId'
+      responses:
+        '200':
+          description: Détails de l'expérience
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtraProfessionalExperience'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      tags: [Extra-Professional Experiences]
+      summary: Mettre à jour une expérience extra-professionnelle
+      operationId: updateExtraProfessionalExperience
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ExperienceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ExtraProfessionalExperienceInput'
+                - type: object
+                  required: [updatedAt]
+                  properties:
+                    updatedAt:
+                      type: string
+                      format: date-time
+      responses:
+        '200':
+          description: Expérience mise à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExtraProfessionalExperience'
+        '409':
+          description: Conflit détecté (modification concurrente)
+
+    delete:
+      tags: [Extra-Professional Experiences]
+      summary: Supprimer une expérience extra-professionnelle
+      operationId: deleteExtraProfessionalExperience
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ExperienceId'
+      responses:
+        '204':
+          description: Expérience supprimée
+
+  # ========== EDUCATION ==========
+  /education:
+    get:
+      tags: [Education]
+      summary: Liste des formations de l'utilisateur
+      operationId: listEducation
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Liste des formations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Education'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Education]
+      summary: Ajouter une nouvelle formation
+      operationId: createEducation
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EducationInput'
+      responses:
+        '201':
+          description: Formation ajoutée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Education'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /education/{id}:
+    get:
+      tags: [Education]
+      summary: Obtenir une formation par ID
+      operationId: getEducation
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Détails de la formation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Education'
+
+    put:
+      tags: [Education]
+      summary: Mettre à jour une formation
+      operationId: updateEducation
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EducationInput'
+      responses:
+        '200':
+          description: Formation mise à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Education'
+
+    delete:
+      tags: [Education]
+      summary: Supprimer une formation
+      operationId: deleteEducation
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Formation supprimée
+
+  # ========== EXPORT ==========
+  /export/markdown:
+    get:
+      tags: [Export]
+      summary: Exporter le parcours professionnel complet en Markdown
+      operationId: exportMarkdown
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Document Markdown généré
+          content:
+            text/markdown:
+              schema:
+                type: string
+                example: |
+                  # Jean Dupont - Parcours Professionnel
+
+                  ## Expériences Professionnelles
+
+                  ### Développeur Senior - Acme Corp
+                  *Jan 2020 - Présent*
+
+                  **Situation**: ...
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+                example: 'attachment; filename="parcours-professionnel.md"'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ========== CONFIGURATION (Admin) ==========
+  /config/smtp:
+    get:
+      tags: [Configuration]
+      summary: Obtenir la configuration SMTP (admin uniquement)
+      operationId: getSmtpConfig
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Configuration SMTP (mot de passe masqué)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SmtpConfig'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+    put:
+      tags: [Configuration]
+      summary: Mettre à jour la configuration SMTP (admin uniquement)
+      operationId: updateSmtpConfig
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SmtpConfig'
+      responses:
+        '200':
+          description: Configuration mise à jour
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    ExperienceId:
+      name: id
+      in: path
+      required: true
+      description: ID de l'expérience
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        emailConfirmedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    ProfessionalExperience:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        company:
+          type: string
+          maxLength: 255
+        role:
+          type: string
+          maxLength: 255
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+          nullable: true
+        isCurrent:
+          type: boolean
+        situation:
+          type: string
+          maxLength: 10000
+          nullable: true
+        task:
+          type: string
+          maxLength: 10000
+          nullable: true
+        action:
+          type: string
+          maxLength: 10000
+          nullable: true
+        result:
+          type: string
+          maxLength: 10000
+          nullable: true
+        completionPercentage:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: "Pourcentage de complétion STAR (calculé)"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ProfessionalExperienceInput:
+      type: object
+      required: [company, role, startDate]
+      properties:
+        company:
+          type: string
+          maxLength: 255
+        role:
+          type: string
+          maxLength: 255
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+          nullable: true
+        isCurrent:
+          type: boolean
+          default: false
+        situation:
+          type: string
+          maxLength: 10000
+        task:
+          type: string
+          maxLength: 10000
+        action:
+          type: string
+          maxLength: 10000
+        result:
+          type: string
+          maxLength: 10000
+
+    ExtraProfessionalExperience:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        activityName:
+          type: string
+          maxLength: 255
+        organization:
+          type: string
+          maxLength: 255
+          nullable: true
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+          nullable: true
+        isOngoing:
+          type: boolean
+        situation:
+          type: string
+          maxLength: 10000
+          nullable: true
+        task:
+          type: string
+          maxLength: 10000
+          nullable: true
+        action:
+          type: string
+          maxLength: 10000
+          nullable: true
+        result:
+          type: string
+          maxLength: 10000
+          nullable: true
+        completionPercentage:
+          type: integer
+          minimum: 0
+          maximum: 100
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ExtraProfessionalExperienceInput:
+      type: object
+      required: [activityName, startDate]
+      properties:
+        activityName:
+          type: string
+          maxLength: 255
+        organization:
+          type: string
+          maxLength: 255
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+          nullable: true
+        isOngoing:
+          type: boolean
+          default: false
+        situation:
+          type: string
+          maxLength: 10000
+        task:
+          type: string
+          maxLength: 10000
+        action:
+          type: string
+          maxLength: 10000
+        result:
+          type: string
+          maxLength: 10000
+
+    Education:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        institution:
+          type: string
+          maxLength: 255
+        degreeType:
+          type: string
+          maxLength: 100
+        fieldOfStudy:
+          type: string
+          maxLength: 255
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+          nullable: true
+        isInProgress:
+          type: boolean
+        gpa:
+          type: string
+          maxLength: 50
+          nullable: true
+        honors:
+          type: string
+          maxLength: 255
+          nullable: true
+        relevantCoursework:
+          type: string
+          maxLength: 1000
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    EducationInput:
+      type: object
+      required: [institution, degreeType, fieldOfStudy, startDate]
+      properties:
+        institution:
+          type: string
+          maxLength: 255
+        degreeType:
+          type: string
+          maxLength: 100
+        fieldOfStudy:
+          type: string
+          maxLength: 255
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+          nullable: true
+        isInProgress:
+          type: boolean
+          default: false
+        gpa:
+          type: string
+          maxLength: 50
+        honors:
+          type: string
+          maxLength: 255
+        relevantCoursework:
+          type: string
+          maxLength: 1000
+
+    SmtpConfig:
+      type: object
+      properties:
+        host:
+          type: string
+          example: "smtp.example.com"
+        port:
+          type: integer
+          example: 587
+        user:
+          type: string
+          example: "noreply@jearch.com"
+        password:
+          type: string
+          writeOnly: true
+          description: "Chiffré en base de données"
+        fromAddress:
+          type: string
+          format: email
+          example: "noreply@jearch.com"
+        fromName:
+          type: string
+          example: "Jearch"
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+
+  responses:
+    BadRequest:
+      description: Requête invalide
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Unauthorized:
+      description: Non authentifié
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Forbidden:
+      description: Accès interdit (permissions insuffisantes)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NotFound:
+      description: Ressource introuvable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
