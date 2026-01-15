@@ -1,283 +1,478 @@
-# Technology Research: Jearch Implementation
+# Research & Technology Decisions
 
-**Date**: 2026-01-13  
-**Feature**: 001-jearch-career-coach  
-**Purpose**: Resolve technology stack decisions for Vercel + Supabase deployment
+**Feature**: Jearch - Virtual Career Coach  
+**Branch**: `001-jearch-career-coach`  
+**Date**: 2026-01-15
+
+This document captures key technology decisions, research findings, and architectural patterns for the Jearch platform.
 
 ---
 
-## 1. Full-Stack Framework
+## 1. UI Component Library: Chakra UI
 
 ### Decision
-**Next.js 14+ (Full-Stack TypeScript)**
+Use **Chakra UI v2+** for all UI components with French localization.
 
 ### Rationale
-Next.js 14+ serves as both frontend and backend for Jearch, eliminating the need for a separate Python API layer. This full-stack approach reduces complexity, improves performance (no extra API hop), and keeps the entire codebase in TypeScript. Next.js API Routes and Server Actions handle all backend logic (CRUD operations, auth validation, markdown export) while directly integrating with Supabase. The Vercel AI SDK is built specifically for Next.js, making future AI chatbot features seamless. Server Components enable efficient data fetching, and the App Router provides hybrid rendering (SSR for public pages, CSR for interactive dashboards). Single-language codebase simplifies development, enables type sharing between client/server, and reduces serverless function invocations (better performance and cost).
+- **Accessibility-first**: Built-in WCAG 2.1 AA compliance (meets FR-052 requirement)
+- **Composable components**: Flexible, well-documented components for forms, modals, navigation
+- **TypeScript support**: Excellent type safety and autocomplete
+- **Theme customization**: Easy to customize for branding while maintaining accessibility
+- **Active community**: Well-maintained with regular updates
+- **French localization support**: Can configure French labels, error messages, and ARIA labels
+- **No Tailwind dependency**: Uses CSS-in-JS (Emotion), avoiding Tailwind requirement
 
 ### Alternatives Considered
-- **Separate Python Backend (FastAPI)**: Rejected because it adds unnecessary complexity (two deployments, two languages, extra API hop with cold starts), when Next.js can handle all backend requirements natively. Python would only be justified for ML workloads or Python-specific libraries, neither of which apply here.
-- **SvelteKit**: Lighter bundle size but smaller ecosystem for AI integration (no Vercel AI SDK equivalent), fewer Supabase examples, and less mature accessibility component libraries. The future AI chatbot feature makes React's ecosystem more valuable.
-- **Remix**: Good full-stack framework but Next.js has better Vercel integration (zero-config), more Supabase examples, and the Vercel AI SDK is Next.js-first.
+- **shadcn/ui + Tailwind**: Rejected due to Tailwind requirement
+- **Radix UI**: Rejected due to need for custom styling (slower initial development)
+- **Material-UI (MUI)**: Rejected due to larger bundle size and Material Design opinions
+- **Mantine**: Strong contender but Chakra has better accessibility documentation
 
 ### Implementation Notes
-- API Routes in `app/api/` directory for RESTful endpoints
-- Server Actions for form mutations (alternative to API routes)
-- Direct Supabase client integration (no intermediate API layer)
-- JWT validation using `@supabase/ssr` for server-side auth
-- TypeScript types shared between client and server
-- Zod for request/response validation
+- Configure ChakraProvider with French locale in root layout
+- Create custom theme with French error messages
+- Wrap common components (Button, Input, Textarea, etc.) with French labels
+- Use Chakra's built-in form validation with React Hook Form
 
 ---
 
-## 2. Frontend Architecture (Next.js App Router)
+## 2. French Localization Strategy
 
 ### Decision
-**Next.js 14+ (App Router with React Server Components)**
+Use a **two-tier approach**: Chakra UI theme configuration for component strings + route-based French naming.
 
 ### Rationale
-Next.js is the optimal choice because it's built by Vercel specifically for their platform, offering zero-config deployment, automatic serverless function creation, and built-in optimizations. The App Router with React Server Components provides excellent performance through selective client-side hydration while maintaining rich interactivity for forms. Next.js has the most mature ecosystem for Jearch's requirements: React Hook Form or Formik for sophisticated form handling with auto-save/debounce, extensive accessibility tooling (automatic image optimization, built-in ESLint accessibility rules), seamless Supabase integration via `@supabase/auth-helpers-nextjs`, and excellent documentation for SSR/SPA hybrid approaches ideal for authenticated dashboards.
+- **User requirement**: Interface must be in French (specified in `/speckit.plan` input)
+- **Out of scope**: Multi-language support explicitly excluded (spec: Out of Scope section)
+- **Simplicity**: Hardcoded French strings are simpler than i18n library for single-language app
+- **Performance**: No runtime translation overhead
+- **SEO**: French route names improve discoverability for French users
 
 ### Alternatives Considered
-- **React (Vite + SPA)**: Pure SPA loses SEO benefits for public pages, requires manual Vercel configuration, lacks built-in API routes forcing all backend logic into separate Python functions, and provides no SSR benefits for initial page loads
-- **SvelteKit**: Smaller ecosystem for critical requirements (fewer form libraries with mature auto-save patterns, less extensive accessibility libraries, fewer Supabase integration examples), smaller talent pool for maintenance
-- **Vue.js (Nuxt 3)**: Smaller ecosystem for enterprise-grade form handling, less extensive Supabase documentation, fewer accessibility component libraries (Radix UI/Headless UI are React-first)
+- **next-intl / react-i18next**: Rejected as over-engineering for single-language app
+- **English with translation layer**: Rejected to avoid unnecessary abstraction
 
 ### Implementation Notes
-- Use App Router with hybrid rendering:
-  - Public pages (landing, login): Server-side rendered for SEO
-  - Dashboard/Forms: Client-side rendered for rich interactivity
-- Form handling: React Hook Form + Zod validation
-- Auto-save implementation:
-  ```javascript
-  const { watch } = useForm();
-  useEffect(() => {
-    const subscription = watch(debounce((data) => autoSave(data), 2000));
-    return () => subscription.unsubscribe();
-  }, [watch]);
-  ```
-- Accessibility: Radix UI or Headless UI for WCAG 2.1 AA compliant components
-- Auth middleware: `@supabase/auth-helpers-nextjs` for route protection
+- Create `lib/validation/messages.fr.ts` for all validation error messages
+- Use French route names: `/connexion`, `/inscription`, `/experiences-pro`, `/formation`
+- All UI text, labels, buttons, tooltips in French
+- Email templates in French
+- Validation messages in French (Zod schemas)
+
+### French Terminology
+| English | French | Route/Usage |
+|---------|--------|-------------|
+| Login | Connexion | `/connexion` |
+| Sign up / Register | Inscription | `/inscription` |
+| Password reset | Réinitialiser le mot de passe | `/reinitialiser` |
+| Dashboard | Tableau de bord | `/tableau-de-bord` |
+| Professional experience | Expérience professionnelle | `/experiences-pro` |
+| Extra-professional | Expérience extra-professionnelle | `/experiences-extra` |
+| Education | Formation | `/formation` |
+| Export | Exporter | `/exporter` |
+| Settings | Paramètres | `/parametres` |
+| Save | Enregistrer | Button label |
+| Delete | Supprimer | Button label |
+| Cancel | Annuler | Button label |
 
 ---
 
-## 3. Email Service Strategy
+## 3. Form Management: React Hook Form + Zod
 
 ### Decision
-**Supabase Auth with Custom SMTP + Supabase Edge Functions for Email Queue Management**
+Use **React Hook Form** for form state management with **Zod** for schema validation.
 
 ### Rationale
-Supabase Auth provides built-in email verification and password reset flows with customizable templates and supports custom SMTP configuration, satisfying core authentication email requirements. To meet additional requirements (retry queue, failed email monitoring, admin-configurable SMTP), complement this with a Supabase Edge Function that handles email queuing and retry logic. This approach leverages Supabase's native capabilities while adding production-grade robustness. The combination keeps infrastructure simple (no additional services beyond Supabase + Vercel), provides full control over email logic, and enables admin monitoring through Supabase database tables.
+- **Performance**: Minimal re-renders, essential for large STAR forms (10,000 char fields)
+- **Auto-save support**: Easy to debounce and trigger saves on field changes (FR-051)
+- **Validation**: Zod integration provides type-safe validation with custom French messages
+- **Accessibility**: Works seamlessly with Chakra UI's accessible form components
+- **TypeScript**: Excellent type inference from Zod schemas
 
 ### Alternatives Considered
-- **Supabase Auth with default email only**: Lacks retry queue functionality and admin-configurable SMTP settings (configured at project level, not runtime)
-- **Vercel serverless + external email service (SendGrid/Resend)**: Bypasses Supabase Auth's built-in flows, requiring custom implementation of security-critical authentication flows
-- **Pure Edge Functions replacing Supabase Auth**: Unnecessarily duplicates Supabase Auth's battle-tested email verification and password reset logic
+- **Formik**: Rejected due to more re-renders and less TypeScript support
+- **Native React state**: Rejected due to complexity of auto-save and validation
 
-### Implementation Architecture
-
-```
-User Action → Supabase Auth → Edge Function (Email Queue) → SMTP Service
-                  ↓                     ↓                         
-            Secure tokens        Queue + Retry Logic        Configurable
-            Email triggers       Failure logging            (SendGrid/SES/Resend)
-```
-
-### Database Schema
-- `email_queue`: Tracks pending, sent, failed, retrying emails with exponential backoff
-- `email_failures`: Logs failed emails for admin monitoring
-- `smtp_config`: Admin-configurable SMTP settings (host, port, credentials in Supabase Vault)
-
-### Retry Logic
-- Exponential backoff: 5, 10, 20 minutes between retries
-- Max 3 attempts before marking as failed
-- Cron job (Vercel or Supabase) processes queue every 5 minutes
-
-### Recommended SMTP Providers
-1. **Resend** - Modern API, 3,000 emails/month free, excellent deliverability
-2. **AWS SES** - Cheapest at scale ($0.10/1000 emails)
-3. **SendGrid** - Enterprise-grade, 100 emails/day free
-4. **Postmark** - Best deliverability rates
+### Implementation Notes
+- Create Zod schemas in `lib/validation/schemas.ts`
+- French error messages in `lib/validation/messages.fr.ts`
+- Debounce auto-save to 2 seconds using `useDebounce` hook
+- Show auto-save indicator component (FR-051)
+- Validate character limits client-side before server submission
 
 ---
 
-## 4. Authentication Integration
+## 4. Authentication & Rate Limiting: Supabase Auth + Custom Middleware
 
 ### Decision
-**Use Supabase Auth as primary system with JWT validation in Next.js API routes. Frontend handles all auth UI flows via Supabase client SDK; API routes validate sessions using Supabase SSR helpers.**
+Use **Supabase Auth** for core authentication with **Next.js middleware** for rate limiting.
 
 ### Rationale
-Supabase Auth is production-ready and handles all required flows (email verification, password reset, session management) out-of-the-box, eliminating custom auth logic. The architecture leverages Supabase's secure token generation while Next.js API routes validate sessions for API authorization. The `@supabase/ssr` package provides server-side helpers for Next.js that handle cookie-based sessions, automatic token refresh, and secure server-side auth validation. This minimizes security risks, reduces development time, and scales well with Vercel's serverless architecture.
+- **Built-in features**: Email verification, password reset, session management out-of-box
+- **Security**: HttpOnly cookies, secure session tokens (FR-009a)
+- **RLS integration**: Row Level Security policies tie directly to Supabase auth users
+- **Rate limiting**: Custom middleware for progressive delays (3/5/10 attempts - FR-009)
+
+### Alternatives Considered
+- **NextAuth.js**: Rejected due to Supabase requirement for database/auth integration
+- **Custom auth**: Rejected due to complexity and security risks
 
 ### Implementation Notes
+- Configure Supabase Auth with custom email templates (French)
+- Implement rate limiting in `middleware.ts`:
+  - Track failed attempts in Supabase table
+  - Apply progressive delays: 5 min, 15 min, 1 hour
+  - Send unlock email on 1-hour lockout
+- "Keep me logged in" checkbox controls session expiry settings
+- Email verification required before dashboard access (FR-003)
 
-#### Email Verification
-- Enable "Confirm email" in Supabase Dashboard → Authentication → Email Settings
-- Users receive verification email after signup
-- Auth flow blocks unverified users automatically
-- Backend validates JWT `email_confirmed_at` claim
+---
 
-#### Password Reset
-- Frontend calls `supabase.auth.resetPasswordForEmail()`
-- User receives email with reset link to frontend route
-- Frontend route calls `supabase.auth.updateUser({ password })`
-- No backend code required
+## 5. Auto-Save Implementation: Debounced Hooks + Optimistic Updates
 
-#### "Keep Me Logged In"
-- Supabase sessions persist by default using refresh tokens (7 days default, configurable to 1 year)
-- Frontend implementation:
-  ```javascript
-  // Persistent (localStorage - default):
-  const supabase = createClient(url, key)
-  
-  // Non-persistent (sessionStorage):
-  const supabase = createClient(url, key, {
-    auth: { storage: window.sessionStorage }
-  })
-  ```
-- Supabase auto-refreshes access tokens (1-hour expiry)
+### Decision
+Implement auto-save using **debounced React hooks** with **optimistic UI updates**.
 
-#### Password Policy (12 chars, letters + numbers)
-- **Limitation**: Supabase only supports minimum length configuration, no complexity rules
-- **Solution**: 
-  - Frontend validation: Regex `^(?=.*[A-Za-z])(?=.*\d).{12,}$` before `signUp()`
-  - Backend defense: Database trigger on `auth.users` to reject weak passwords
-  - Set minimum length to 12 in Supabase Dashboard
+### Rationale
+- **UX requirement**: Save 2 seconds after typing stops (FR-051)
+- **Visual feedback**: Show save indicator (saving/saved/error states)
+- **Conflict detection**: Use `updated_at` timestamp for version tracking (FR-053)
+- **Navigation safety**: Trigger save before route changes
 
-#### Next.js API Routes JWT Validation
+### Implementation Pattern
 ```typescript
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
-import { NextResponse } from 'next/server'
-
-export async function GET(request: Request) {
-  const supabase = createRouteHandlerClient({ cookies })
+const useAutoSave = (formData, saveFunction, delay = 2000) => {
+  const [saveStatus, setSaveStatus] = useState('idle'); // idle | saving | saved | error
+  const debouncedSave = useDebouncedCallback(saveFunction, delay);
   
-  // Get authenticated user from session
-  const { data: { user }, error } = await supabase.auth.getUser()
+  useEffect(() => {
+    if (formData) {
+      setSaveStatus('saving');
+      debouncedSave(formData);
+    }
+  }, [formData]);
   
-  if (error || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-  
-  if (!user.email_confirmed_at) {
-    return NextResponse.json({ error: 'Email not verified' }, { status: 403 })
-  }
-  
-  // User is authenticated and verified
-  return NextResponse.json({ userId: user.id, email: user.email })
-}
+  return { saveStatus };
+};
 ```
-
-#### Session Security
-- **Brute Force**: Supabase built-in rate limiting (6 requests/60s per IP); add Vercel middleware for additional protection
-- **Session Hijacking Prevention**:
-  - Short-lived JWTs (1 hour)
-  - Single-use refresh tokens (rotated on refresh)
-  - HTTPS only (Vercel enforced)
-  - Backend validates signature, expiry, audience
-- **CORS**: Configure allowed origins in Supabase Dashboard
-- **RLS**: Enable Row-Level Security policies for user-level data isolation
-
-### Environment Variables
-**Next.js (Vercel)**:
-- `NEXT_PUBLIC_SUPABASE_URL` (public - client-side)
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` (public - client-side)
-- `SUPABASE_SERVICE_ROLE_KEY` (private - server-side only, for admin operations)
 
 ### Alternatives Considered
-- **Custom Backend Auth**: Building email verification, password reset, session management from scratch increases development time and security risk
-- **Frontend-only with Direct DB Access**: Exposes database operations to client manipulation; backend validation essential
-- **Firebase Auth**: Additional vendor; Supabase Auth maintains single-vendor integration
-- **Auth0/Clerk**: Additional cost and complexity; Supabase Auth included with database tier
+- **Manual save only**: Rejected due to data loss risk
+- **Real-time sync (WebSockets)**: Rejected as over-engineering for single-user forms
+
+### Implementation Notes
+- Debounce onChange events for text inputs
+- Show spinner/indicator during save
+- Display "Enregistré" (Saved) confirmation
+- Handle save errors gracefully with retry option
+- Save on blur and before navigation using Next.js router events
 
 ---
 
-## 5. Project Structure Decision
+## 6. Concurrent Edit Detection: Optimistic Locking with Timestamps
 
-### Structure
-```
-jearch/
-├── app/                       # Next.js App Router (frontend + backend)
-│   ├── (auth)/               # Auth routes (login, signup, reset)
-│   ├── dashboard/            # Protected dashboard
-│   ├── experiences/          # Experience management pages
-│   ├── education/            # Education management pages
-│   ├── export/               # Career path export pages
-│   ├── api/                  # Next.js API Routes (backend)
-│   │   ├── experiences/      # Experience CRUD endpoints
-│   │   ├── education/        # Education CRUD endpoints
-│   │   └── export/           # Markdown export endpoints
-│   └── layout.tsx            # Root layout
-│
-├── components/               # Reusable UI components
-│   ├── ui/                   # Base UI components (buttons, forms)
-│   └── features/             # Feature-specific components
-│
-├── lib/                      # Utilities and shared code
-│   ├── supabase/            # Supabase client setup
-│   ├── validations/         # Zod schemas
-│   └── utils/               # Helper functions
-│
-├── supabase/
-│   ├── migrations/          # Database schema
-│   └── functions/           # Edge Functions (email queue)
-│
-├── public/                  # Static assets
-├── package.json
-├── next.config.js
-└── tsconfig.json
-```
+### Decision
+Implement **optimistic locking** using `updated_at` timestamps for conflict detection.
 
 ### Rationale
-- Single Next.js application handles both frontend and backend (full-stack TypeScript)
-- API Routes in `app/api/` provide RESTful endpoints without separate backend deployment
-- Eliminates complexity of managing two separate applications and languages
-- Type sharing between client and server code reduces bugs
-- Single deployment target on Vercel with zero configuration
-- All backend logic (CRUD, auth validation, export) runs as serverless functions automatically
-- Supabase folder remains separate for database migrations and Edge Functions (email queue)
+- **User requirement**: Detect conflicts, warn user, show merge interface (FR-053)
+- **Simplicity**: Timestamp comparison is simpler than CRDTs or operational transforms
+- **PostgreSQL support**: Supabase PostgreSQL has built-in timestamp tracking
+
+### Implementation Pattern
+```typescript
+// On save, check if DB updated_at > local updated_at
+const handleSave = async (data, localUpdatedAt) => {
+  const { data: current } = await supabase
+    .from('experiences')
+    .select('updated_at')
+    .eq('id', data.id)
+    .single();
+    
+  if (new Date(current.updated_at) > new Date(localUpdatedAt)) {
+    // Show conflict modal with merge interface
+    return { conflict: true, serverData: current };
+  }
+  
+  // Proceed with save
+  return await supabase.from('experiences').update(data);
+};
+```
+
+### Alternatives Considered
+- **Last write wins**: Rejected due to data loss risk
+- **Pessimistic locking**: Rejected due to poor UX (blocking other tabs)
+- **CRDTs**: Rejected as over-engineering
+
+### Implementation Notes
+- Store `updated_at` in component state on load
+- Check timestamp before every save
+- Show modal with side-by-side diff on conflict
+- Allow user to choose: keep theirs, keep server, or manual merge
+- Refresh `updated_at` after successful save
 
 ---
 
-## 6. Testing Strategy
+## 7. SMTP Email Queue: Database-Backed Retry Queue
 
-### API Routes Testing
-- **Framework**: Jest + Next.js testing utilities
-- **Unit Tests**: API route handlers, validation functions
-- **Integration Tests**: Supabase client operations, auth flows
-- **Mocking**: Mock Supabase client for isolated tests
+### Decision
+Implement **database-backed email queue** with exponential backoff retry logic.
 
-### Frontend Testing
-- **Framework**: Jest + React Testing Library
-- **Unit Tests**: Component rendering, form validation
-- **Integration Tests**: Supabase Auth flows, API route calls
-- **E2E Tests**: Playwright for critical user journeys
+### Rationale
+- **Failure handling**: SMTP failures should not block registration (FR-017a)
+- **Reliability**: Queue ensures emails eventually sent even after SMTP downtime
+- **Monitoring**: Admin can see failed emails in database
+- **Configuration**: SMTP settings stored encrypted in database (FR-016)
 
-### E2E Test Scenarios
-1. User registration → email verification → login
-2. Add professional experience → auto-save → edit → delete
-3. Concurrent edit conflict detection
-4. Export empty career path → export with data
+### Implementation Pattern
+```typescript
+// Email queue table schema
+interface EmailQueue {
+  id: string;
+  to: string;
+  subject: string;
+  body: string;
+  template: 'verification' | 'password_reset' | 'unlock';
+  attempts: number;
+  next_retry: timestamp;
+  status: 'pending' | 'sent' | 'failed';
+  error: string | null;
+}
+
+// Retry with exponential backoff
+const retryDelays = [5, 15, 30, 60, 120]; // minutes
+```
+
+### Alternatives Considered
+- **In-memory queue**: Rejected due to loss on server restart
+- **Third-party service (SendGrid, etc.)**: Rejected due to self-hosted SMTP requirement
+
+### Implementation Notes
+- Cron job (Supabase Edge Function or Vercel Cron) processes queue every 5 minutes
+- Exponential backoff: 5, 15, 30, 60, 120 minutes
+- After 5 failures, mark as permanently failed and alert admin
+- Log all SMTP attempts for debugging (FR-058)
+- Encrypt SMTP credentials in database using Supabase vault
+
+---
+
+## 8. Markdown Export: Server-Side Generation with Character Escaping
+
+### Decision
+Generate markdown **server-side** in Next.js API route with proper character escaping.
+
+### Rationale
+- **Data safety**: Escape markdown special characters to prevent formatting breaks (FR-046)
+- **Consistency**: Server-side ensures consistent formatting
+- **Performance**: Large exports (100+ experiences) don't block client
+- **Testing**: Easier to unit test markdown generation
+
+### Implementation Pattern
+```typescript
+const escapeMarkdown = (text: string): string => {
+  const specialChars = ['\\', '*', '_', '#', '[', ']', '(', ')', '`', '~', '|'];
+  return specialChars.reduce((str, char) => 
+    str.replaceAll(char, `\\${char}`), text
+  );
+};
+
+const generateMarkdown = (userData) => {
+  return `
+# ${escapeMarkdown(userData.name)} - Parcours Professionnel
+
+## Expériences Professionnelles
+
+${userData.professionalExperiences.map(exp => `
+### ${escapeMarkdown(exp.role)} - ${escapeMarkdown(exp.company)}
+*${formatDate(exp.startDate)} - ${exp.current ? 'Présent' : formatDate(exp.endDate)}*
+
+**Situation**: ${escapeMarkdown(exp.situation)}
+**Tâche**: ${escapeMarkdown(exp.task)}
+**Action**: ${escapeMarkdown(exp.action)}
+**Résultat**: ${escapeMarkdown(exp.result)}
+`).join('\n')}
+...
+  `;
+};
+```
+
+### Alternatives Considered
+- **Client-side generation**: Rejected due to testing complexity
+- **No escaping**: Rejected due to formatting corruption risk (FR-046)
+
+### Implementation Notes
+- API route `/api/export/markdown` generates markdown
+- Escape all user-entered content
+- Use French section headers ("Expériences Professionnelles", "Formation")
+- Handle empty career paths with placeholder text (FR-048a)
+- Set proper `Content-Disposition` header for download
+
+---
+
+## 9. Observability: Structured JSON Logging to Console
+
+### Decision
+Use **structured JSON logging** to console output, relying on Vercel/Supabase built-in log aggregation.
+
+### Rationale
+- **User requirement**: Platform-native observability only (FR-060, FR-061, FR-062)
+- **Zero setup**: No third-party services to configure
+- **Cost**: Free within Vercel/Supabase plans
+- **Compliance**: Meets observability requirements without over-engineering
+
+### Implementation Pattern
+```typescript
+const logger = {
+  info: (message: string, metadata?: object) => {
+    console.log(JSON.stringify({
+      level: 'info',
+      timestamp: new Date().toISOString(),
+      message,
+      ...metadata
+    }));
+  },
+  error: (message: string, error: Error, metadata?: object) => {
+    console.error(JSON.stringify({
+      level: 'error',
+      timestamp: new Date().toISOString(),
+      message,
+      error: error.message,
+      stack: error.stack,
+      ...metadata
+    }));
+  }
+};
+
+// Usage
+logger.info('Experience created', { userId, experienceId });
+logger.error('SMTP send failed', error, { emailType: 'verification' });
+```
+
+### Alternatives Considered
+- **Sentry/Datadog**: Rejected due to platform-native requirement (FR-060)
+- **Winston/Pino**: Rejected as unnecessary for console output
+
+### Implementation Notes
+- Log critical events: auth attempts, CRUD operations, SMTP failures, errors (FR-058)
+- DO NOT log: STAR content, passwords, tokens, full emails (FR-059)
+- Vercel automatically captures console output
+- Supabase logs database queries and auth events
+- Monitor via Vercel dashboard and Supabase dashboard (FR-062)
+
+---
+
+## 10. Accessibility: Chakra UI + Manual ARIA Labels (French)
+
+### Decision
+Leverage **Chakra UI's built-in accessibility** + custom French ARIA labels where needed.
+
+### Rationale
+- **WCAG 2.1 AA requirement**: Mandatory (FR-052)
+- **Keyboard navigation**: Chakra provides out-of-box keyboard support (SC-007)
+- **Screen reader support**: Proper ARIA labels in French enhance UX
+- **Focus management**: Chakra handles focus trapping in modals
+
+### Implementation Checklist
+- [ ] All form inputs have French labels and error messages
+- [ ] Buttons have descriptive text or `aria-label` in French
+- [ ] Focus indicators visible on all interactive elements
+- [ ] Modal dialogs trap focus and announce in French
+- [ ] Auto-save status announced to screen readers (`aria-live="polite"`)
+- [ ] Character counters have `aria-describedby` linking to limit
+- [ ] Color contrast meets AA standards (4.5:1 for normal text)
+- [ ] Forms navigable entirely by keyboard
+
+### Implementation Notes
+- Use Chakra's `FormControl`, `FormLabel`, `FormErrorMessage` components
+- Add `aria-label` to icon buttons: "Supprimer l'expérience"
+- Announce auto-save status changes: "Enregistrement en cours...", "Enregistré"
+- Test with screen readers (NVDA, JAWS, VoiceOver in French mode)
+
+---
+
+## 11. Testing Strategy
+
+### Decision
+**Three-tier testing**: Unit (Jest), Integration (Supabase local), E2E (Playwright).
+
+### Rationale
+- **Spec requirements**: User stories define acceptance scenarios (testable with E2E)
+- **CI/CD**: Automated testing prevents regressions
+- **Confidence**: Integration tests verify Supabase RLS policies work correctly
+
+### Test Coverage Targets
+- **Unit tests**: Utilities (markdown export, validation, escaping) - 80%+ coverage
+- **Integration tests**: API routes + Supabase queries - 70%+ coverage
+- **E2E tests**: All user stories from spec - 100% of acceptance scenarios
+
+### Implementation Notes
+- **Unit**: Test `lib/` functions with Jest
+  - `lib/export/markdown.ts` - markdown generation and escaping
+  - `lib/validation/schemas.ts` - Zod schema validation
+- **Integration**: Test API routes with Supabase local
+  - `app/api/experiences/route.ts` - CRUD operations
+  - Verify RLS policies block unauthorized access
+- **E2E**: Test user flows with Playwright
+  - User Story 1: Registration, login, logout, password reset
+  - User Story 2: Add/edit/delete professional experience
+  - User Story 3: Add extra-professional experience
+  - User Story 4: Add education entry
+  - User Story 5: Export markdown
+
+### Tools
+- **Jest** + **React Testing Library**: Component and utility tests
+- **Playwright**: E2E tests in French (fill forms with French labels)
+- **Supabase CLI**: Local database for integration tests
+
+---
+
+## 12. Deployment & Infrastructure
+
+### Decision
+Deploy on **Vercel** with **Supabase** cloud database.
+
+### Rationale
+- **Spec requirement**: Vercel hosting (CLAUDE.md: "Vercel (Hosting)")
+- **Next.js optimization**: Vercel is built for Next.js (creators of Next.js)
+- **Zero config**: Automatic HTTPS, CDN, serverless functions
+- **Supabase integration**: Official Vercel + Supabase integration available
+
+### Infrastructure Components
+- **Vercel**: Hosts Next.js app, serverless API routes
+- **Supabase**: PostgreSQL database, authentication, RLS policies
+- **Vercel Cron** (or Supabase Edge Function): Email queue processing
+- **Environment variables**: Managed via Vercel dashboard + .env.local
+
+### Implementation Notes
+- Configure Supabase project with production database
+- Set environment variables in Vercel:
+  - `NEXT_PUBLIC_SUPABASE_URL`
+  - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+  - `SUPABASE_SERVICE_ROLE_KEY`
+  - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`
+- Enable Vercel Analytics for performance monitoring (optional)
+- Configure custom domain with HTTPS
 
 ---
 
 ## Summary of Key Decisions
 
-| Decision Area | Choice | Primary Reason |
-|--------------|--------|----------------|
-| Full-Stack Framework | Next.js 14+ (TypeScript) | Single codebase, API Routes for backend, Vercel-native, hybrid rendering |
-| Database/Auth | Supabase | All-in-one solution, built-in auth, PostgreSQL |
-| Email Strategy | Supabase Auth + Edge Functions | Native flows + retry queue + monitoring |
-| Hosting | Vercel | Serverless, zero-config, automatic scaling |
-| Authentication | Supabase Auth + JWT validation | Production-ready, secure, minimal custom code |
+| Area | Technology | Rationale |
+|------|------------|-----------|
+| UI Framework | Chakra UI v2+ | Accessibility-first, no Tailwind, French localization |
+| Localization | Hardcoded French | Single-language app, no i18n overhead |
+| Form Management | React Hook Form + Zod | Performance, auto-save support, TypeScript |
+| Authentication | Supabase Auth | Built-in email verification, session management |
+| Rate Limiting | Custom Next.js middleware | Progressive delays (3/5/10 attempts) |
+| Auto-Save | Debounced hooks (2s) | UX requirement, optimistic updates |
+| Conflict Detection | Optimistic locking (timestamp) | Simple, effective, PostgreSQL-native |
+| Email Queue | Database-backed queue | Reliability, exponential backoff |
+| Markdown Export | Server-side generation | Character escaping, testability |
+| Observability | Structured JSON logs | Platform-native (Vercel + Supabase) |
+| Accessibility | Chakra UI + French ARIA | WCAG 2.1 AA compliance |
+| Testing | Jest + Playwright + Supabase | Unit, integration, E2E coverage |
+| Deployment | Vercel + Supabase cloud | Spec requirement, optimal for Next.js |
 
 ---
 
-## Next Steps for Implementation
-
-1. ✅ Research complete
-2. → Generate data-model.md (Phase 1)
-3. → Generate API contracts (Phase 1)
-4. → Generate quickstart.md (Phase 1)
-5. → Update agent context (Phase 1)
-6. → Generate tasks.md (Phase 2 - separate `/speckit.tasks` command)
+**Next Steps**: Proceed to Phase 1 (data-model.md, API contracts, quickstart.md)

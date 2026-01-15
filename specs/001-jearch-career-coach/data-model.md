@@ -1,8 +1,10 @@
-# Data Model: Jearch - Virtual Career Coach
+# Data Model
 
-**Feature**: 001-jearch-career-coach  
-**Date**: 2026-01-13  
-**Database**: Supabase (PostgreSQL)
+**Feature**: Jearch - Virtual Career Coach  
+**Branch**: `001-jearch-career-coach`  
+**Date**: 2026-01-15
+
+This document defines the complete data model for the Jearch platform, including entities, relationships, validation rules, and database schema.
 
 ---
 
@@ -10,471 +12,537 @@
 
 ```
 ┌─────────────────────┐
-│       User          │
-│  (Supabase Auth)    │
+│       users         │
+│ (Supabase Auth)     │
 └──────────┬──────────┘
            │ 1
            │
            │ *
-      ┌────┴─────────────────────────────────────┐
-      │                                           │
-      │                                           │
-┌─────▼────────────────┐  ┌──────────────────────▼────┐  ┌───────────────────▼─────┐
-│ ProfessionalExperience│  │ ExtraProfessionalExperience│  │      Education          │
-└──────────────────────┘  └───────────────────────────┘  └─────────────────────────┘
+     ┌─────┴─────────────────────┬─────────────────────────┬────────────────────┐
+     │                           │                         │                    │
+     │ *                         │ *                       │ *                  │ *
+┌────┴──────────────┐   ┌────────┴──────────────┐  ┌──────┴───────────┐  ┌────┴────────────┐
+│ professional_exp  │   │ extra_professional_   │  │   education      │  │   config        │
+│                   │   │      experiences      │  │                  │  │                 │
+└───────────────────┘   └───────────────────────┘  └──────────────────┘  └─────────────────┘
+```
+
+**Relationships**:
+- One User has many Professional Experiences (1:*)
+- One User has many Extra-Professional Experiences (1:*)
+- One User has many Education entries (1:*)
+- Config table stores application-wide settings (e.g., SMTP)
+
+---
+
+## 1. Users (Supabase Auth)
+
+**Managed by**: Supabase Authentication system
+
+**Fields** (from Supabase Auth):
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| id | uuid | PK, auto-generated | User unique identifier |
+| email | string | unique, not null | User email (login credential) |
+| encrypted_password | string | not null | Bcrypt hashed password (Supabase managed) |
+| email_confirmed_at | timestamp | nullable | Email verification timestamp |
+| created_at | timestamp | not null, default now() | Account creation timestamp |
+| updated_at | timestamp | not null, default now() | Last update timestamp |
+
+**Extended Profile** (custom `profiles` table):
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| id | uuid | PK, FK → auth.users.id | References Supabase auth user |
+| full_name | string | nullable | User's full name (optional) |
+| preferred_language | string | not null, default 'fr' | UI language (French only in v1) |
+| created_at | timestamp | not null, default now() | Profile creation timestamp |
+| updated_at | timestamp | not null, default now() | Last update timestamp |
+
+**Validation Rules**:
+- Email format: RFC 5322 compliant (handled by Supabase)
+- Password: Minimum 12 characters, must contain letters + numbers (FR-002)
+- Email verification required before platform access (FR-003)
+
+**State Transitions**:
+1. **Registered** → User created, `email_confirmed_at` is NULL
+2. **Verified** → User clicks email confirmation link, `email_confirmed_at` set
+3. **Active** → User can access platform features
+4. **Locked** → 10 failed login attempts, account temporarily locked (1 hour)
+5. **Deleted** → User requests deletion, all data permanently removed (FR-014)
+
+**Row Level Security (RLS)**:
+```sql
+-- Users can only read/update their own profile
+CREATE POLICY "Users can view own profile"
+  ON profiles FOR SELECT
+  USING (auth.uid() = id);
+
+CREATE POLICY "Users can update own profile"
+  ON profiles FOR UPDATE
+  USING (auth.uid() = id);
 ```
 
 ---
 
-## 1. User
+## 2. Professional Experiences
 
-**Purpose**: Represents a job seeker with authentication and profile settings.
+**Table**: `professional_experiences`
 
-**Storage**: Managed by Supabase Auth (`auth.users` table). Extended profile data in `public.profiles`.
+**Purpose**: Store user's professional work experiences in STAR format.
 
-### Fields (auth.users - managed by Supabase)
+**Fields**:
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| id | uuid | PK, auto-generated | Unique user identifier |
-| email | text | UNIQUE, NOT NULL | User email address |
-| encrypted_password | text | NOT NULL | Bcrypt hashed password |
-| email_confirmed_at | timestamptz | nullable | Email verification timestamp |
-| created_at | timestamptz | NOT NULL, default NOW() | Account creation timestamp |
-| updated_at | timestamptz | NOT NULL, default NOW() | Last update timestamp |
+| id | uuid | PK, auto-generated | Experience unique identifier |
+| user_id | uuid | FK → auth.users.id, not null | Owner of the experience |
+| company | string | not null, max 255 | Company name |
+| role | string | not null, max 255 | Job title/role |
+| start_date | date | not null | Employment start date |
+| end_date | date | nullable | Employment end date (NULL if current) |
+| is_current | boolean | not null, default false | Flag indicating current position |
+| situation | text | nullable, max 10,000 chars | STAR: Situation description |
+| task | text | nullable, max 10,000 chars | STAR: Task description |
+| action | text | nullable, max 10,000 chars | STAR: Action description |
+| result | text | nullable, max 10,000 chars | STAR: Result description |
+| created_at | timestamp | not null, default now() | Record creation timestamp |
+| updated_at | timestamp | not null, default now() | Last update timestamp (for conflict detection) |
 
-### Fields (public.profiles - custom extension)
-| Field | Type | Constraints | Description |
-|-------|------|-------------|-------------|
-| id | uuid | PK, FK → auth.users.id | User identifier |
-| full_name | text | nullable | User's full name (optional) |
-| created_at | timestamptz | NOT NULL, default NOW() | Profile creation timestamp |
-| updated_at | timestamptz | NOT NULL, default NOW() | Last update timestamp |
+**Validation Rules**:
+- Company name required, 1-255 characters
+- Role required, 1-255 characters
+- Start date required, must be valid date
+- End date optional, must be >= start_date (if provided)
+- If `is_current = true`, `end_date` must be NULL
+- STAR fields (situation, task, action, result) are all optional (FR-019)
+- Each STAR field max 10,000 characters (FR-020)
+- No validation for employment gaps (FR-028a)
 
-### Validation Rules
-- **FR-002**: Email must match standard email format (`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
-- **FR-002**: Password minimum 12 characters, must contain letters AND numbers
-- **FR-003**: `email_confirmed_at` must be set before user can access platform features
-
-### State Transitions
-1. **Created** → User signs up, `email_confirmed_at` is NULL
-2. **Verified** → User clicks verification link, `email_confirmed_at` is set
-3. **Active** → Verified user can access all features
-4. **Deleted** → User requests account deletion, all related data removed
-
-### Security
-- Passwords never stored in plain text (Supabase uses bcrypt)
-- Row-Level Security (RLS) enforced:
-  - Users can only read/update their own profile
-  - Service role can read all profiles for admin operations
-
----
-
-## 2. ProfessionalExperience
-
-**Purpose**: Represents a work position documented using STAR format.
-
-**Storage**: `public.professional_experiences` table
-
-### Fields
-| Field | Type | Constraints | Description |
-|-------|------|-------------|-------------|
-| id | uuid | PK, auto-generated | Unique experience identifier |
-| user_id | uuid | FK → auth.users.id, NOT NULL | Owner of this experience |
-| company_name | text | NOT NULL | Company or organization name |
-| role_title | text | NOT NULL | Job title or position |
-| start_date | date | NOT NULL | Start date of position |
-| end_date | date | nullable | End date (NULL if current position) |
-| is_current | boolean | NOT NULL, default FALSE | Whether this is current position |
-| situation | text | nullable, max 10,000 chars | STAR: Situation component |
-| task | text | nullable, max 10,000 chars | STAR: Task component |
-| action | text | nullable, max 10,000 chars | STAR: Action component |
-| result | text | nullable, max 10,000 chars | STAR: Result component |
-| version | integer | NOT NULL, default 1 | Version for conflict detection |
-| created_at | timestamptz | NOT NULL, default NOW() | Creation timestamp |
-| updated_at | timestamptz | NOT NULL, default NOW() | Last update timestamp |
-
-### Indexes
+**Indexes**:
 ```sql
 CREATE INDEX idx_prof_exp_user_id ON professional_experiences(user_id);
-CREATE INDEX idx_prof_exp_start_date ON professional_experiences(start_date DESC);
-CREATE INDEX idx_prof_exp_updated_at ON professional_experiences(updated_at);
+CREATE INDEX idx_prof_exp_dates ON professional_experiences(user_id, start_date DESC);
 ```
 
-### Validation Rules
-- **FR-018**: `company_name`, `role_title`, `start_date` are required
-- **FR-019**: All STAR fields (`situation`, `task`, `action`, `result`) are optional
-- **FR-020**: Each STAR field max 10,000 characters
-- **FR-028**: If `is_current` is TRUE, `end_date` must be NULL
-- **FR-053**: `version` increments on each update for conflict detection
-- Business rule: `end_date` must be >= `start_date` if both provided
+**Computed Fields** (application-level):
+- `completion_percentage`: Count of filled STAR fields / 4 * 100 (FR-022)
+- `display_order`: Sort by `is_current DESC, start_date DESC` (FR-026)
 
-### Computed Properties
-- **completion_percentage** (FR-022): Count of non-empty STAR fields / 4 * 100
-  ```sql
-  (CASE WHEN situation IS NOT NULL AND situation != '' THEN 1 ELSE 0 END +
-   CASE WHEN task IS NOT NULL AND task != '' THEN 1 ELSE 0 END +
-   CASE WHEN action IS NOT NULL AND action != '' THEN 1 ELSE 0 END +
-   CASE WHEN result IS NOT NULL AND result != '' THEN 1 ELSE 0 END) * 25 AS completion_percentage
-  ```
-
-### State Transitions
-1. **Draft** → Created with minimal required fields, STAR components empty
-2. **Partial** → Some STAR components filled (1-3 of 4)
-3. **Complete** → All STAR components filled (4 of 4)
-4. **Deleted** → Soft delete or hard delete on user request
-
-### RLS Policies
+**Row Level Security (RLS)**:
 ```sql
--- Users can only access their own experiences
-CREATE POLICY "Users manage own professional experiences"
-ON professional_experiences
-FOR ALL
-USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own professional experiences"
+  ON professional_experiences
+  FOR ALL
+  USING (auth.uid() = user_id);
 ```
 
 ---
 
-## 3. ExtraProfessionalExperience
+## 3. Extra-Professional Experiences
 
-**Purpose**: Represents volunteer work, personal projects, and other extra-professional activities using STAR format.
+**Table**: `extra_professional_experiences`
 
-**Storage**: `public.extra_professional_experiences` table
+**Purpose**: Store volunteer work, personal projects, and non-work experiences in STAR format.
 
-### Fields
+**Fields**:
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| id | uuid | PK, auto-generated | Unique experience identifier |
-| user_id | uuid | FK → auth.users.id, NOT NULL | Owner of this experience |
-| activity_name | text | NOT NULL | Name of activity or project |
-| organization | text | nullable | Organization or context |
-| start_date | date | NOT NULL | Start date of activity |
-| end_date | date | nullable | End date (NULL if ongoing) |
-| is_ongoing | boolean | NOT NULL, default FALSE | Whether activity is ongoing |
-| situation | text | nullable, max 10,000 chars | STAR: Situation component |
-| task | text | nullable, max 10,000 chars | STAR: Task component |
-| action | text | nullable, max 10,000 chars | STAR: Action component |
-| result | text | nullable, max 10,000 chars | STAR: Result component |
-| version | integer | NOT NULL, default 1 | Version for conflict detection |
-| created_at | timestamptz | NOT NULL, default NOW() | Creation timestamp |
-| updated_at | timestamptz | NOT NULL, default NOW() | Last update timestamp |
+| id | uuid | PK, auto-generated | Experience unique identifier |
+| user_id | uuid | FK → auth.users.id, not null | Owner of the experience |
+| activity_name | string | not null, max 255 | Activity/project name |
+| organization | string | nullable, max 255 | Organization/context (optional) |
+| start_date | date | not null | Activity start date |
+| end_date | date | nullable | Activity end date (NULL if ongoing) |
+| is_ongoing | boolean | not null, default false | Flag indicating ongoing activity |
+| situation | text | nullable, max 10,000 chars | STAR: Situation description |
+| task | text | nullable, max 10,000 chars | STAR: Task description |
+| action | text | nullable, max 10,000 chars | STAR: Action description |
+| result | text | nullable, max 10,000 chars | STAR: Result description |
+| created_at | timestamp | not null, default now() | Record creation timestamp |
+| updated_at | timestamp | not null, default now() | Last update timestamp (for conflict detection) |
 
-### Indexes
+**Validation Rules**:
+- Activity name required, 1-255 characters
+- Organization optional, max 255 characters
+- Start date required, must be valid date
+- End date optional, must be >= start_date (if provided)
+- If `is_ongoing = true`, `end_date` must be NULL
+- STAR fields all optional (FR-030)
+- Each STAR field max 10,000 characters (FR-031)
+
+**Indexes**:
 ```sql
 CREATE INDEX idx_extra_exp_user_id ON extra_professional_experiences(user_id);
-CREATE INDEX idx_extra_exp_start_date ON extra_professional_experiences(start_date DESC);
-CREATE INDEX idx_extra_exp_updated_at ON extra_professional_experiences(updated_at);
+CREATE INDEX idx_extra_exp_dates ON extra_professional_experiences(user_id, start_date DESC);
 ```
 
-### Validation Rules
-- **FR-029**: `activity_name`, `start_date` are required
-- **FR-029**: All STAR fields are optional
-- **FR-031**: Each STAR field max 10,000 characters
-- **FR-029**: If `is_ongoing` is TRUE, `end_date` must be NULL
-- **FR-053**: `version` increments on each update for conflict detection
-- Business rule: `end_date` must be >= `start_date` if both provided
+**Computed Fields**:
+- `completion_percentage`: Count of filled STAR fields / 4 * 100 (FR-033)
+- `display_order`: Sort by `is_ongoing DESC, start_date DESC` (FR-036)
 
-### Computed Properties
-- **completion_percentage** (FR-033): Same formula as ProfessionalExperience
-
-### State Transitions
-Same as ProfessionalExperience (Draft → Partial → Complete → Deleted)
-
-### RLS Policies
+**Row Level Security (RLS)**:
 ```sql
--- Users can only access their own experiences
-CREATE POLICY "Users manage own extra professional experiences"
-ON extra_professional_experiences
-FOR ALL
-USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own extra-professional experiences"
+  ON extra_professional_experiences
+  FOR ALL
+  USING (auth.uid() = user_id);
 ```
 
 ---
 
 ## 4. Education
 
-**Purpose**: Represents an academic qualification or educational achievement.
+**Table**: `education`
 
-**Storage**: `public.education` table
+**Purpose**: Store user's academic qualifications and educational background.
 
-### Fields
+**Fields**:
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| id | uuid | PK, auto-generated | Unique education identifier |
-| user_id | uuid | FK → auth.users.id, NOT NULL | Owner of this education entry |
-| institution_name | text | NOT NULL | Name of educational institution |
-| degree_type | text | NOT NULL | Type of degree (e.g., Bachelor's, Master's, PhD, Certificate) |
-| field_of_study | text | NOT NULL | Major or field of study |
-| start_date | date | NOT NULL | Start date of study |
-| end_date | date | nullable | End date (NULL if in progress) |
-| is_in_progress | boolean | NOT NULL, default FALSE | Whether study is in progress |
-| gpa | numeric(3,2) | nullable, CHECK (gpa >= 0 AND gpa <= 4.0) | Grade Point Average (optional) |
-| honors | text | nullable | Honors or distinctions (optional) |
-| relevant_coursework | text | nullable | Relevant coursework (optional) |
-| version | integer | NOT NULL, default 1 | Version for conflict detection |
-| created_at | timestamptz | NOT NULL, default NOW() | Creation timestamp |
-| updated_at | timestamptz | NOT NULL, default NOW() | Last update timestamp |
+| id | uuid | PK, auto-generated | Education entry unique identifier |
+| user_id | uuid | FK → auth.users.id, not null | Owner of the entry |
+| institution | string | not null, max 255 | Institution/school name |
+| degree_type | string | not null, max 100 | Type of degree (e.g., "Licence", "Master") |
+| field_of_study | string | not null, max 255 | Field/major (e.g., "Informatique") |
+| start_date | date | not null | Studies start date |
+| end_date | date | nullable | Studies end date (NULL if in progress) |
+| is_in_progress | boolean | not null, default false | Flag indicating ongoing studies |
+| gpa | string | nullable, max 50 | GPA or grade (optional) |
+| honors | string | nullable, max 255 | Honors or distinctions (optional) |
+| relevant_coursework | text | nullable, max 1000 | Relevant courses (optional) |
+| created_at | timestamp | not null, default now() | Record creation timestamp |
+| updated_at | timestamp | not null, default now() | Last update timestamp |
 
-### Indexes
+**Validation Rules**:
+- Institution required, 1-255 characters
+- Degree type required, 1-100 characters
+- Field of study required, 1-255 characters
+- Start date required, must be valid date
+- End date optional, must be >= start_date (if provided)
+- If `is_in_progress = true`, `end_date` must be NULL
+- Overlapping education dates allowed (FR-041a)
+- GPA, honors, coursework all optional (FR-039)
+
+**Indexes**:
 ```sql
 CREATE INDEX idx_education_user_id ON education(user_id);
-CREATE INDEX idx_education_start_date ON education(start_date DESC);
-CREATE INDEX idx_education_updated_at ON education(updated_at);
+CREATE INDEX idx_education_dates ON education(user_id, start_date DESC);
 ```
 
-### Validation Rules
-- **FR-037**: `institution_name`, `degree_type`, `field_of_study`, `start_date` are required
-- **FR-038**: If `is_in_progress` is TRUE, `end_date` must be NULL
-- **FR-039**: `gpa`, `honors`, `relevant_coursework` are optional
-- **FR-053**: `version` increments on each update for conflict detection
-- Business rule: `end_date` must be >= `start_date` if both provided
-- Business rule: GPA must be between 0.0 and 4.0 (if provided)
+**Computed Fields**:
+- `display_order`: Sort by `is_in_progress DESC, end_date DESC NULLS FIRST` (FR-041)
 
-### State Transitions
-1. **In Progress** → `is_in_progress` = TRUE, `end_date` = NULL
-2. **Completed** → `is_in_progress` = FALSE, `end_date` set
-3. **Deleted** → Soft delete or hard delete on user request
-
-### RLS Policies
+**Row Level Security (RLS)**:
 ```sql
--- Users can only access their own education entries
-CREATE POLICY "Users manage own education"
-ON education
-FOR ALL
-USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own education entries"
+  ON education
+  FOR ALL
+  USING (auth.uid() = user_id);
 ```
 
 ---
 
-## 5. Supporting Tables
+## 5. Application Configuration
 
-### 5.1 email_queue
+**Table**: `app_config`
 
-**Purpose**: Queue emails for retry with exponential backoff (FR-017a).
+**Purpose**: Store application-wide configuration (primarily SMTP settings).
 
-**Storage**: `public.email_queue` table
-
-### Fields
+**Fields**:
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| id | uuid | PK, auto-generated | Unique queue item identifier |
-| user_id | uuid | FK → auth.users.id, nullable | Related user (nullable for non-user emails) |
-| email_type | text | NOT NULL | Email type: 'verification', 'password_reset' |
-| recipient | text | NOT NULL | Email recipient address |
-| subject | text | NOT NULL | Email subject line |
-| body | text | NOT NULL | Email body (HTML or plain text) |
-| template_data | jsonb | nullable | Template variables |
-| status | text | NOT NULL, default 'pending' | Status: 'pending', 'sent', 'failed', 'retrying' |
-| attempts | integer | NOT NULL, default 0 | Number of send attempts |
-| max_attempts | integer | NOT NULL, default 3 | Maximum retry attempts |
-| next_retry_at | timestamptz | nullable | Next retry timestamp |
-| error_message | text | nullable | Last error message |
-| created_at | timestamptz | NOT NULL, default NOW() | Queue creation timestamp |
-| sent_at | timestamptz | nullable | Successful send timestamp |
-| updated_at | timestamptz | NOT NULL, default NOW() | Last update timestamp |
+| id | uuid | PK, auto-generated | Config entry unique identifier |
+| key | string | unique, not null, max 100 | Configuration key (e.g., "smtp_host") |
+| value | text | nullable | Configuration value (encrypted if sensitive) |
+| is_encrypted | boolean | not null, default false | Flag indicating if value is encrypted |
+| description | string | nullable, max 500 | Human-readable description |
+| created_at | timestamp | not null, default now() | Record creation timestamp |
+| updated_at | timestamp | not null, default now() | Last update timestamp |
 
-### Indexes
+**Configuration Keys**:
+| Key | Type | Encrypted | Description |
+|-----|------|-----------|-------------|
+| smtp_host | string | No | SMTP server hostname |
+| smtp_port | integer | No | SMTP server port (e.g., 587) |
+| smtp_user | string | No | SMTP username/email |
+| smtp_password | string | Yes | SMTP password (encrypted) |
+| smtp_from_address | string | No | From email address |
+| smtp_from_name | string | No | From display name (e.g., "Jearch") |
+
+**Validation Rules**:
+- Key required, unique, 1-100 characters
+- Value required for most keys (nullable for future flexibility)
+- Sensitive values (passwords) must have `is_encrypted = true`
+
+**Encryption**:
+- Use Supabase Vault for encrypting sensitive values (FR-016, FR-054)
+- Decrypt only when needed for SMTP operations
+
+**Row Level Security (RLS)**:
 ```sql
-CREATE INDEX idx_email_queue_status ON email_queue(status);
-CREATE INDEX idx_email_queue_next_retry ON email_queue(next_retry_at) WHERE status = 'retrying';
-CREATE INDEX idx_email_queue_user_id ON email_queue(user_id);
+-- Only admins/service role can access config
+CREATE POLICY "Service role only"
+  ON app_config
+  FOR ALL
+  USING (auth.role() = 'service_role');
 ```
 
 ---
 
-### 5.2 email_failures
+## 6. Email Queue
 
-**Purpose**: Log failed emails for admin monitoring (FR-017a).
+**Table**: `email_queue`
 
-**Storage**: `public.email_failures` table
+**Purpose**: Queue for outgoing emails with retry logic for SMTP failures.
 
-### Fields
+**Fields**:
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| id | uuid | PK, auto-generated | Unique failure identifier |
-| email_queue_id | uuid | FK → email_queue.id, nullable | Reference to queued email |
-| user_id | uuid | FK → auth.users.id, nullable | Related user |
-| email_type | text | nullable | Email type for quick filtering |
-| error_message | text | nullable | Error message |
-| smtp_response | text | nullable | SMTP server response |
-| failed_at | timestamptz | NOT NULL, default NOW() | Failure timestamp |
-| resolved | boolean | NOT NULL, default FALSE | Whether issue is resolved |
-| resolved_at | timestamptz | nullable | Resolution timestamp |
-| resolved_by | uuid | FK → auth.users.id, nullable | Admin who resolved issue |
+| id | uuid | PK, auto-generated | Queue entry unique identifier |
+| to_email | string | not null, max 255 | Recipient email address |
+| subject | string | not null, max 500 | Email subject (French) |
+| body_text | text | not null | Email body plain text (French) |
+| body_html | text | nullable | Email body HTML (optional) |
+| template_type | string | not null | Template type: "verification", "password_reset", "unlock" |
+| user_id | uuid | FK → auth.users.id, nullable | Associated user (if applicable) |
+| attempts | integer | not null, default 0 | Number of send attempts |
+| max_attempts | integer | not null, default 5 | Maximum retry attempts |
+| next_retry_at | timestamp | nullable | Scheduled next retry timestamp |
+| status | string | not null, default 'pending' | Status: "pending", "sent", "failed" |
+| error_message | text | nullable | Last error message (if failed) |
+| sent_at | timestamp | nullable | Successful send timestamp |
+| created_at | timestamp | not null, default now() | Queue entry creation timestamp |
+| updated_at | timestamp | not null, default now() | Last update timestamp |
 
-### Indexes
+**Validation Rules**:
+- To email required, valid email format
+- Subject and body_text required
+- Template type must be one of: "verification", "password_reset", "unlock"
+- Status must be one of: "pending", "sent", "failed"
+
+**State Transitions**:
+1. **Pending** → Email queued, `attempts = 0`
+2. **Retrying** → Send failed, `attempts++`, `next_retry_at` set with exponential backoff
+3. **Sent** → Email successfully sent, `sent_at` set, `status = 'sent'`
+4. **Failed** → Max attempts reached, `status = 'failed'`
+
+**Retry Schedule** (exponential backoff):
+- Attempt 1: Immediate
+- Attempt 2: 5 minutes later
+- Attempt 3: 15 minutes later
+- Attempt 4: 30 minutes later
+- Attempt 5: 60 minutes later
+- After 5 attempts: Permanently failed
+
+**Indexes**:
 ```sql
-CREATE INDEX idx_email_failures_resolved ON email_failures(resolved, failed_at);
-CREATE INDEX idx_email_failures_user_id ON email_failures(user_id);
+CREATE INDEX idx_email_queue_status ON email_queue(status, next_retry_at);
+CREATE INDEX idx_email_queue_user ON email_queue(user_id);
+```
+
+**Row Level Security (RLS)**:
+```sql
+-- Service role only (background job processes queue)
+CREATE POLICY "Service role only"
+  ON email_queue
+  FOR ALL
+  USING (auth.role() = 'service_role');
 ```
 
 ---
 
-### 5.3 smtp_config
+## 7. Login Attempts (Rate Limiting)
 
-**Purpose**: Admin-configurable SMTP settings (FR-015, FR-017).
+**Table**: `login_attempts`
 
-**Storage**: `public.smtp_config` table
+**Purpose**: Track failed login attempts for rate limiting and account lockout.
 
-### Fields
+**Fields**:
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| id | uuid | PK, auto-generated | Unique config identifier |
-| host | text | NOT NULL | SMTP server hostname |
-| port | integer | NOT NULL, CHECK (port > 0 AND port <= 65535) | SMTP port number |
-| username | text | NOT NULL | SMTP username |
-| password_vault_key | text | NOT NULL | Reference to Supabase Vault secret |
-| from_email | text | NOT NULL | Sender email address |
-| from_name | text | NOT NULL | Sender display name |
-| use_tls | boolean | NOT NULL, default TRUE | Whether to use TLS |
-| is_active | boolean | NOT NULL, default TRUE | Whether this config is active |
-| created_at | timestamptz | NOT NULL, default NOW() | Config creation timestamp |
-| updated_at | timestamptz | NOT NULL, default NOW() | Last update timestamp |
+| id | uuid | PK, auto-generated | Attempt record unique identifier |
+| email | string | not null, max 255 | Email used in login attempt |
+| ip_address | string | nullable, max 45 | IP address of attempt (IPv6 compatible) |
+| success | boolean | not null | True if login succeeded, false if failed |
+| attempt_at | timestamp | not null, default now() | Attempt timestamp |
 
-### RLS Policies
+**Computed Aggregates** (queried, not stored):
+- Count failed attempts in last 1 hour for email
+- Determine lockout status based on count
+
+**Rate Limiting Logic** (FR-009):
+- 3 failed attempts within 1 hour → 5 minute delay
+- 5 failed attempts within 1 hour → 15 minute delay
+- 10 failed attempts within 1 hour → 1 hour lockout + unlock email sent
+
+**Indexes**:
 ```sql
--- Only admins can manage SMTP config
-CREATE POLICY "Admins only manage SMTP config"
-ON smtp_config
-FOR ALL
-USING (auth.jwt() ->> 'role' = 'admin');
+CREATE INDEX idx_login_attempts_email ON login_attempts(email, attempt_at DESC);
+```
+
+**Data Retention**:
+- Clean up records older than 24 hours (scheduled job)
+
+**Row Level Security (RLS)**:
+```sql
+-- Service role only (middleware checks this table)
+CREATE POLICY "Service role only"
+  ON login_attempts
+  FOR ALL
+  USING (auth.role() = 'service_role');
 ```
 
 ---
 
-## Database Triggers
+## Database Schema Summary
 
-### 1. Auto-update timestamp trigger
+**Tables**: 7 total
+1. `profiles` (extends Supabase auth.users)
+2. `professional_experiences`
+3. `extra_professional_experiences`
+4. `education`
+5. `app_config`
+6. `email_queue`
+7. `login_attempts`
 
+**Foreign Keys**:
+- All user-related tables → `auth.users.id` (Supabase managed)
+
+**Triggers** (PostgreSQL):
 ```sql
+-- Auto-update updated_at timestamp on UPDATE
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
+   NEW.updated_at = now();
+   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
--- Apply to all tables
-CREATE TRIGGER update_professional_experiences_updated_at
-    BEFORE UPDATE ON professional_experiences
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
+-- Apply to all tables with updated_at
+CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON profiles
+FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_extra_professional_experiences_updated_at
-    BEFORE UPDATE ON extra_professional_experiences
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_prof_exp_updated_at BEFORE UPDATE ON professional_experiences
+FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_education_updated_at
-    BEFORE UPDATE ON education
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-```
-
-### 2. Auto-increment version trigger (FR-053)
-
-```sql
-CREATE OR REPLACE FUNCTION increment_version()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.version = OLD.version + 1;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- Apply to versioned tables
-CREATE TRIGGER increment_professional_experiences_version
-    BEFORE UPDATE ON professional_experiences
-    FOR EACH ROW
-    EXECUTE FUNCTION increment_version();
-
-CREATE TRIGGER increment_extra_professional_experiences_version
-    BEFORE UPDATE ON extra_professional_experiences
-    FOR EACH ROW
-    EXECUTE FUNCTION increment_version();
-
-CREATE TRIGGER increment_education_version
-    BEFORE UPDATE ON education
-    FOR EACH ROW
-    EXECUTE FUNCTION increment_version();
+-- (Repeat for other tables)
 ```
 
 ---
 
-## Database Functions
+## TypeScript Type Definitions
 
-### 1. Get completion percentage
+**Location**: `specs/001-jearch-career-coach/contracts/types.ts`
 
-```sql
-CREATE OR REPLACE FUNCTION get_completion_percentage(
-    p_situation text,
-    p_task text,
-    p_action text,
-    p_result text
-)
-RETURNS integer AS $$
-BEGIN
-    RETURN (
-        (CASE WHEN p_situation IS NOT NULL AND p_situation != '' THEN 1 ELSE 0 END) +
-        (CASE WHEN p_task IS NOT NULL AND p_task != '' THEN 1 ELSE 0 END) +
-        (CASE WHEN p_action IS NOT NULL AND p_action != '' THEN 1 ELSE 0 END) +
-        (CASE WHEN p_result IS NOT NULL AND p_result != '' THEN 1 ELSE 0 END)
-    ) * 25;
-END;
-$$ LANGUAGE plpgsql IMMUTABLE;
+```typescript
+// Core domain types
+
+export interface User {
+  id: string;
+  email: string;
+  emailConfirmedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface Profile {
+  id: string;
+  fullName: string | null;
+  preferredLanguage: 'fr';
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ProfessionalExperience {
+  id: string;
+  userId: string;
+  company: string;
+  role: string;
+  startDate: Date;
+  endDate: Date | null;
+  isCurrent: boolean;
+  situation: string | null;
+  task: string | null;
+  action: string | null;
+  result: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ExtraProfessionalExperience {
+  id: string;
+  userId: string;
+  activityName: string;
+  organization: string | null;
+  startDate: Date;
+  endDate: Date | null;
+  isOngoing: boolean;
+  situation: string | null;
+  task: string | null;
+  action: string | null;
+  result: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface Education {
+  id: string;
+  userId: string;
+  institution: string;
+  degreeType: string;
+  fieldOfStudy: string;
+  startDate: Date;
+  endDate: Date | null;
+  isInProgress: boolean;
+  gpa: string | null;
+  honors: string | null;
+  relevantCoursework: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface AppConfig {
+  id: string;
+  key: string;
+  value: string;
+  isEncrypted: boolean;
+  description: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface EmailQueue {
+  id: string;
+  toEmail: string;
+  subject: string;
+  bodyText: string;
+  bodyHtml: string | null;
+  templateType: 'verification' | 'password_reset' | 'unlock';
+  userId: string | null;
+  attempts: number;
+  maxAttempts: number;
+  nextRetryAt: Date | null;
+  status: 'pending' | 'sent' | 'failed';
+  errorMessage: string | null;
+  sentAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Computed types (not stored, calculated client-side or server-side)
+
+export interface ExperienceWithCompletion extends ProfessionalExperience {
+  completionPercentage: number; // 0-100
+}
+
+export interface ConflictData {
+  hasConflict: boolean;
+  localUpdatedAt: Date;
+  serverUpdatedAt: Date;
+  serverData: ProfessionalExperience | ExtraProfessionalExperience | Education;
+}
 ```
 
 ---
 
-## Data Retention Policy
-
-- **FR-010**: User data retained indefinitely until explicit deletion request
-- **FR-011**: No automatic deletion based on inactivity
-- **FR-014**: Account deletion permanently removes all user data:
-  - `auth.users` entry
-  - `public.profiles` entry
-  - All `professional_experiences` (CASCADE DELETE)
-  - All `extra_professional_experiences` (CASCADE DELETE)
-  - All `education` entries (CASCADE DELETE)
-  - Related `email_queue` entries (anonymize or delete)
-  - Related `email_failures` entries (anonymize or delete)
-
----
-
-## Character Limits Summary
-
-| Field | Limit | Requirement |
-|-------|-------|-------------|
-| STAR components (all 4) | 10,000 chars each | FR-020, FR-031 |
-| Email | 255 chars | Standard email length |
-| Text fields (names, titles) | 500 chars | Reasonable length for UI |
-
----
-
-## Performance Considerations
-
-- Indexes on `user_id` for all user-owned tables enable fast lookups
-- Indexes on `start_date DESC` for chronological ordering (FR-026, FR-036, FR-041)
-- Indexes on `updated_at` for auto-save and sync operations
-- Indexes on `status` and `next_retry_at` for email queue processing
-- Version field indexed for conflict detection queries (FR-053)
-
----
-
-## Migration Strategy
-
-1. Create base tables: `profiles`, `professional_experiences`, `extra_professional_experiences`, `education`
-2. Create supporting tables: `email_queue`, `email_failures`, `smtp_config`
-3. Create indexes for performance
-4. Create triggers for auto-update and versioning
-5. Create RLS policies for security
-6. Create database functions for computed values
-7. Seed initial SMTP configuration (if defaults provided)
-
----
-
-## Next Steps
-
-- → Generate API contracts (OpenAPI spec)
-- → Design markdown export schema
-- → Create Supabase migration files
+**Next Steps**: Proceed to API contracts generation (OpenAPI spec).
